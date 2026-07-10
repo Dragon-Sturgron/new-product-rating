@@ -220,8 +220,21 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function beijingDateTime(value = new Date()) {
+  const d = new Date(new Date(value).getTime() + 8 * 60 * 60 * 1000);
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function beijingDate(value = new Date()) {
+  return beijingDateTime(value).slice(0, 10);
+}
+
 function nowDateTime() {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  return beijingDateTime();
+}
+
+function normalizeReviewerName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
 function newSubmissionId() {
@@ -698,6 +711,18 @@ function createD1Storage(env) {
       return (results || []).map(row => attachScoreItems(row, fields));
     },
 
+    async getDailySubmission(reviewer, reviewDate) {
+      await ensureTables();
+      const row = await DB().prepare(`
+        SELECT reviewer, review_date, submission_id, submitted_at, created_at
+        FROM review_scores
+        WHERE deleted_at IS NULL AND reviewer = ? AND review_date = ?
+        ORDER BY COALESCE(submitted_at, created_at) DESC, id DESC
+        LIMIT 1
+      `).bind(normalizeReviewerName(reviewer), String(reviewDate || '')).first();
+      return row || null;
+    },
+
     async updateScore(id, data) {
       await ensureTables();
       const old = await getScoreById(id);
@@ -798,6 +823,7 @@ function createKVStorage(env) {
   const keyScore = (id) => key(`score:${id}`);
   const keyScoreHistory = (id) => key(`score-history:${id}`);
   const keyDraft = (reviewer, date = dateInTimezone(env)) => key(`draft:${date}:${hashText(normalizeDraftReviewer(reviewer))}`);
+  const keySubmissionDay = (reviewer, date = beijingDate()) => key(`submission-day:${date}:${hashText(normalizeReviewerName(reviewer))}`);
 
   async function getJson(k, fallback) {
     const value = await kv.get(k, { type: 'json' });
@@ -873,7 +899,7 @@ function createKVStorage(env) {
         id,
         ...data,
         submission_id: data.submission_id || newSubmissionId(),
-        submitted_at: data.submitted_at || now(),
+        submitted_at: data.submitted_at || nowDateTime(),
         style_id: style.id,
         product_image: data.product_image || style.product_image || '',
         style_code: data.style_code || style.style_code,
@@ -901,6 +927,78 @@ function createKVStorage(env) {
         .filter(row => !dateTo || String(row.review_date || '') <= dateTo)
         .sort((a, b) => String(b.review_date || '').localeCompare(String(a.review_date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
     },
+    async getDailySubmission(reviewer, reviewDate) {
+      const name = normalizeReviewerName(reviewer);
+      const date = String(reviewDate || beijingDate());
+      if (!name) return null;
+      const marker = await getJson(keySubmissionDay(name, date), null);
+      if (marker && marker.reviewer && String(marker.review_date || '') === date) return marker;
+      const ids = await getIndex('scores');
+      for (const id of ids) {
+        const row = await getScoreById(id);
+        if (row && !row.deleted_at && normalizeReviewerName(row.reviewer) === name && String(row.review_date || '') === date) {
+          const found = { reviewer: row.reviewer, review_date: row.review_date, submission_id: row.submission_id || '', submitted_at: row.submitted_at || row.created_at || '' };
+          await putJson(keySubmissionDay(name, date), found, { expirationTtl: secondsUntilNextLocalDay(env) });
+          return found;
+        }
+      }
+      return null;
+    },
+
+    async createScoresBatch(items = [], meta = {}) {
+      const normalizedItems = Array.isArray(items) ? items : [];
+      if (!normalizedItems.length) return [];
+      const reviewerName = normalizeReviewerName(meta.reviewer || normalizedItems[0]?.reviewer);
+      const reviewDate = String(meta.review_date || normalizedItems[0]?.review_date || beijingDate());
+      if (!meta.skip_duplicate_check) {
+        const existing = await this.getDailySubmission(reviewerName, reviewDate);
+        if (existing) {
+          const error = new Error(`${reviewerName} 今天已经提交过评分，不能重复提交。`);
+          error.status = 409;
+          throw error;
+        }
+      }
+      const fields = await getScoreFields();
+      const uniqueStyleIds = Array.from(new Set(normalizedItems.map(item => String(item.style_id))));
+      const styleRows = await Promise.all(uniqueStyleIds.map(id => getStyleById(id)));
+      const styleById = new Map();
+      styleRows.forEach(style => { if (style) styleById.set(String(style.id), style); });
+      const submissionId = String(meta.submission_id || normalizedItems[0]?.submission_id || newSubmissionId());
+      const submittedAt = String(meta.submitted_at || normalizedItems[0]?.submitted_at || beijingDateTime());
+      const rows = normalizedItems.map((data) => {
+        const style = styleById.get(String(data.style_id));
+        if (!style || style.deleted_at || Number(style.active ?? 1) !== 1) throw new Error('该款式不存在或未启用评分');
+        const id = crypto.randomUUID();
+        return attachScoreItems({
+          id,
+          ...data,
+          reviewer: reviewerName,
+          review_date: reviewDate,
+          submission_id: submissionId,
+          submitted_at: submittedAt,
+          style_id: style.id,
+          product_image: data.product_image || style.product_image || '',
+          style_code: data.style_code || style.style_code,
+          season: data.season || style.season || '',
+          base_price: Object.prototype.hasOwnProperty.call(data, 'base_price') && data.base_price !== undefined ? data.base_price : style.base_price,
+          created_at: submittedAt,
+          updated_at: submittedAt,
+          deleted_at: null
+        }, fields);
+      });
+      await putJson(keySubmissionDay(reviewerName, reviewDate), {
+        reviewer: reviewerName,
+        review_date: reviewDate,
+        submission_id: submissionId,
+        submitted_at: submittedAt
+      }, { expirationTtl: Math.max(60, 48 * 60 * 60) });
+      const ids = await getIndex('scores');
+      await Promise.all(rows.map(row => putJson(keyScore(row.id), row)));
+      await setIndex('scores', [...rows.map(row => row.id), ...ids]);
+      await Promise.all(rows.map(row => addScoreHistory(row.id, 'create', row)));
+      return rows;
+    },
+
     async updateScore(id, data) {
       const old = await getScoreById(id);
       if (!old || old.deleted_at) throw new Error('评分记录不存在');

@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260710-edgeone-style-id-fix-v1");
+console.info("product-review rating version: 20260710-edgeone-beijing-daily-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -641,7 +641,7 @@ async function submitCurrentAndNext() {
       }
     });
     clearDraftProgress();
-    await clearServerDraftProgress();
+    clearServerDraftProgress();
     showView(doneView);
     doneText.textContent = `${reviewer}，你已提交 ${data.scores?.length || styles.length} 个款式的评分。`;
   } catch (e) {
