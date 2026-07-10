@@ -831,30 +831,64 @@ function createKVStorage(env) {
 
 
 function createEdgeOneKVStorage(env) {
-  const EdgeKVClass = globalThis.EdgeKV || env.EdgeKV;
-  if (typeof EdgeKVClass !== 'function') {
-    throw new Error('当前使用 EdgeOne KV 存储，但未绑定 KV 命名空间。请在 EdgeOne Pages 设置中绑定 KV。');
-  }
-  const namespace = String(env.EDGEONE_KV_NAMESPACE || env.EDGEONE_KV || env.KV_NAMESPACE || 'product_review').trim();
-  if (!namespace) throw new Error('当前使用 EdgeOne KV 存储，但未配置 EDGEONE_KV_NAMESPACE。');
-  const edgeKV = new EdgeKVClass({ namespace });
   const cleanKey = (key) => String(key || '')
-    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/[^a-zA-Z0-9_]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 512) || 'empty_key';
-  const kvAdapter = {
-    async get(key, options = {}) {
-      const type = options?.type || 'text';
-      return edgeKV.get(cleanKey(key), { type });
-    },
-    async put(key, value) {
-      return edgeKV.put(cleanKey(key), String(value));
-    },
-    async delete(key) {
-      return edgeKV.delete(cleanKey(key));
-    }
-  };
-  return createKVStorage({ ...env, KV: kvAdapter, KV_PREFIX: env.KV_PREFIX || 'product-review_' });
+
+  const bindingName = String(env.EDGEONE_KV_BINDING || 'EDGEONE_KV').trim();
+  const candidates = [
+    env[bindingName],
+    globalThis[bindingName],
+    env.EDGEONE_KV,
+    globalThis.EDGEONE_KV,
+    env.KV,
+    globalThis.KV,
+    env.my_kv,
+    globalThis.my_kv
+  ].filter(Boolean);
+
+  const directKV = candidates.find(item => item && typeof item.get === 'function' && typeof item.put === 'function');
+  if (directKV) {
+    const kvAdapter = {
+      async get(key, options = {}) {
+        const type = options?.type || 'text';
+        return directKV.get(cleanKey(key), { type });
+      },
+      async put(key, value) {
+        return directKV.put(cleanKey(key), String(value));
+      },
+      async delete(key) {
+        if (typeof directKV.delete === 'function') return directKV.delete(cleanKey(key));
+        return undefined;
+      }
+    };
+    return createKVStorage({ ...env, KV: kvAdapter, KV_PREFIX: env.KV_PREFIX || 'product-review_' });
+  }
+
+  // 兼容早期 Edge Functions 文档中的 EdgeKV 类写法。EdgeOne Pages/Makers 当前更常见的是
+  // 绑定后直接得到变量名对应的 KV 对象，例如 EDGEONE_KV.get()/put()/delete()。
+  const EdgeKVClass = globalThis.EdgeKV || env.EdgeKV;
+  if (typeof EdgeKVClass === 'function') {
+    const namespace = String(env.EDGEONE_KV_NAMESPACE || env.KV_NAMESPACE || 'product_review').trim();
+    if (!namespace) throw new Error('当前使用 EdgeOne KV 存储，但未配置 EDGEONE_KV_NAMESPACE。');
+    const edgeKV = new EdgeKVClass({ namespace });
+    const kvAdapter = {
+      async get(key, options = {}) {
+        const type = options?.type || 'text';
+        return edgeKV.get(cleanKey(key), { type });
+      },
+      async put(key, value) {
+        return edgeKV.put(cleanKey(key), String(value));
+      },
+      async delete(key) {
+        return edgeKV.delete(cleanKey(key));
+      }
+    };
+    return createKVStorage({ ...env, KV: kvAdapter, KV_PREFIX: env.KV_PREFIX || 'product-review_' });
+  }
+
+  throw new Error(`当前使用 EdgeOne KV 存储，但未找到 KV 绑定对象。请在 EdgeOne Pages 的 KV 存储里绑定命名空间，并把变量名设置为 ${bindingName}。`);
 }
 
 function createHttpStorage(env) {
