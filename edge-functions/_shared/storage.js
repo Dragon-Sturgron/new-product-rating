@@ -116,6 +116,31 @@ function toIntId(value, label = 'ID') {
   return n;
 }
 
+function normalizeStyleIdValue(value, label = '款式ID') {
+  if (value === undefined || value === null) {
+    const error = new Error(`${label} 不正确`);
+    error.status = 400;
+    throw error;
+  }
+  const raw = String(value).trim();
+  if (!raw) {
+    const error = new Error(`${label} 不正确`);
+    error.status = 400;
+    throw error;
+  }
+  if (/^[0-9]+$/.test(raw)) {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n <= 0) {
+      const error = new Error(`${label} 不正确`);
+      error.status = 400;
+      throw error;
+    }
+    return n;
+  }
+  // EdgeOne KV / Cloudflare KV 中款式 ID 是 UUID 字符串，不能按 D1 的数字 ID 校验。
+  return raw;
+}
+
 function normalizeMaxScore(value) {
   const n = Number.parseInt(value ?? 10, 10);
   if (!Number.isFinite(n) || n <= 0) return 10;
@@ -288,7 +313,7 @@ function fieldsFromPayloadOrDefault(payload, scoreFields) {
 export function normalizeScorePayload(payload = {}, scoreFields = DEFAULT_SCORE_FIELDS) {
   const fields = fieldsFromPayloadOrDefault(payload, scoreFields);
   const data = {
-    style_id: toIntId(payload.style_id, '款式ID'),
+    style_id: normalizeStyleIdValue(payload.style_id, '款式ID'),
     reviewer: String(payload.reviewer || '').trim(),
     review_date: String(payload.review_date || today()).trim(),
     remark: String(payload.remark || '').trim(),

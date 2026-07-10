@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260710-edgeone-server-draft-v1");
+console.info("product-review rating version: 20260710-edgeone-style-id-fix-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
