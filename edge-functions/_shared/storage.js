@@ -333,6 +333,84 @@ function safeCount(value, fallback = 3) {
   return Math.max(1, Math.min(50, Number.isFinite(n) ? n : fallback));
 }
 
+
+function dateInTimezone(env = {}, value = new Date()) {
+  const timezone = String(env.DRAFT_TIMEZONE || env.TIMEZONE || 'Asia/Shanghai').trim() || 'Asia/Shanghai';
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(value);
+    const get = (type) => parts.find(part => part.type === type)?.value;
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  } catch {
+    return new Date(value).toISOString().slice(0, 10);
+  }
+}
+
+function secondsUntilNextLocalDay(env = {}) {
+  const timezone = String(env.DRAFT_TIMEZONE || env.TIMEZONE || 'Asia/Shanghai').trim() || 'Asia/Shanghai';
+  const nowDate = new Date();
+  const todayDate = dateInTimezone(env, nowDate);
+  let seconds = 24 * 60 * 60;
+  for (let i = 1; i <= 30; i += 1) {
+    const future = new Date(nowDate.getTime() + i * 60 * 1000);
+    if (dateInTimezone(env, future) !== todayDate) {
+      seconds = i * 60;
+      break;
+    }
+  }
+  return Math.max(60, Math.min(seconds + 60, 24 * 60 * 60 + 600));
+}
+
+function hashText(value) {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 0x01000193) >>> 0;
+    h2 = (Math.imul(h2 ^ code, 0x85ebca6b) + i) >>> 0;
+  }
+  return `${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+}
+
+function normalizeDraftReviewer(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function sanitizeDraftPayload(payload = {}, env = {}) {
+  const reviewer = normalizeDraftReviewer(payload.reviewer);
+  if (!reviewer) {
+    const error = new Error('评分人姓名不能为空');
+    error.status = 400;
+    throw error;
+  }
+  const draft_date = String(payload.draft_date || payload.date || dateInTimezone(env)).slice(0, 10);
+  const current_index = Math.max(0, Math.min(999, Number.parseInt(payload.current_index ?? payload.currentIndex ?? 0, 10) || 0));
+  const drafts = Array.isArray(payload.drafts) ? payload.drafts.slice(0, 200).map((item) => ({
+    style_id: item?.style_id ?? item?.styleId ?? '',
+    season: String(item?.season ?? ''),
+    base_price: item?.base_price ?? '',
+    remark: String(item?.remark ?? ''),
+    scores: item?.scores && typeof item.scores === 'object' ? item.scores : {},
+    touched_scores: item?.touched_scores && typeof item.touched_scores === 'object' ? item.touched_scores : {}
+  })) : [];
+  return {
+    reviewer,
+    draft_date,
+    current_index,
+    drafts,
+    style_ids: Array.isArray(payload.style_ids || payload.styleIds) ? (payload.style_ids || payload.styleIds).map(String) : [],
+    score_field_ids: Array.isArray(payload.score_field_ids || payload.scoreFieldIds) ? (payload.score_field_ids || payload.scoreFieldIds).map(String) : [],
+    updated_at: new Date().toISOString(),
+    expires_at: `${draft_date}T23:59:59+08:00`
+  };
+}
+
 export function getStorage(env) {
   const driver = normalizeDriver(env);
   if (['http', 'external', 'api', 'custom'].includes(driver)) return createHttpStorage(env);
@@ -694,12 +772,19 @@ function createKVStorage(env) {
   const keyStyle = (id) => key(`style:${id}`);
   const keyScore = (id) => key(`score:${id}`);
   const keyScoreHistory = (id) => key(`score-history:${id}`);
+  const keyDraft = (reviewer, date = dateInTimezone(env)) => key(`draft:${date}:${hashText(normalizeDraftReviewer(reviewer))}`);
 
   async function getJson(k, fallback) {
     const value = await kv.get(k, { type: 'json' });
     return value ?? fallback;
   }
-  async function putJson(k, value) { await kv.put(k, JSON.stringify(value)); }
+  async function putJson(k, value, options = {}) {
+    const body = JSON.stringify(value);
+    if (options && Object.keys(options).length) {
+      try { await kv.put(k, body, options); return; } catch (_) {}
+    }
+    await kv.put(k, body);
+  }
   async function getIndex(name) {
     const value = await getJson(key(`${name}:index`), []);
     return Array.isArray(value) ? value : [];
@@ -824,6 +909,28 @@ function createKVStorage(env) {
     async setScoreTypes(types) { const s = await getSettings(); s.score_types = normalizeScoreTypes(types); await setSettings(s); return s.score_types; },
     async getScoreFields() { return getScoreFields(); },
     async setScoreFields(fields) { const s = await getSettings(); s.score_fields = normalizeScoreFields(fields, normalizeScoreTypes(s.score_types || DEFAULT_SCORE_TYPES)); await setSettings(s); return s.score_fields; },
+    async getPublicDraft(reviewer) {
+      const name = normalizeDraftReviewer(reviewer);
+      if (!name) return null;
+      const todayKey = dateInTimezone(env);
+      const draft = await getJson(keyDraft(name, todayKey), null);
+      if (!draft || draft.draft_date !== todayKey) return null;
+      return draft;
+    },
+    async savePublicDraft(payload) {
+      const draft = sanitizeDraftPayload({ ...payload, draft_date: dateInTimezone(env) }, env);
+      const ttl = secondsUntilNextLocalDay(env);
+      await putJson(keyDraft(draft.reviewer, draft.draft_date), draft, { expirationTtl: ttl });
+      return draft;
+    },
+    async deletePublicDraft(reviewer) {
+      const name = normalizeDraftReviewer(reviewer);
+      if (!name) return true;
+      const k = keyDraft(name, dateInTimezone(env));
+      if (typeof kv.delete === 'function') await kv.delete(k);
+      else await putJson(k, { deleted: true, draft_date: dateInTimezone(env), reviewer: name, updated_at: now() }, { expirationTtl: 60 });
+      return true;
+    },
     async getImageSettings() { const s = await getSettings(); return normalizeImageSettings(s.image_storage_settings || {}, imageSettingsFromEnv(env)); },
     async setImageSettings(settings) { const s = await getSettings(); const current = normalizeImageSettings(s.image_storage_settings || {}, imageSettingsFromEnv(env)); s.image_storage_settings = normalizeImageSettings(settings, current); await setSettings(s); return s.image_storage_settings; }
   };
@@ -855,7 +962,10 @@ function createEdgeOneKVStorage(env) {
         const type = options?.type || 'text';
         return directKV.get(cleanKey(key), { type });
       },
-      async put(key, value) {
+      async put(key, value, options = {}) {
+        if (options && Object.keys(options).length) {
+          try { return await directKV.put(cleanKey(key), String(value), options); } catch (_) {}
+        }
         return directKV.put(cleanKey(key), String(value));
       },
       async delete(key) {
@@ -878,7 +988,10 @@ function createEdgeOneKVStorage(env) {
         const type = options?.type || 'text';
         return edgeKV.get(cleanKey(key), { type });
       },
-      async put(key, value) {
+      async put(key, value, options = {}) {
+        if (options && Object.keys(options).length) {
+          try { return await edgeKV.put(cleanKey(key), String(value), options); } catch (_) {}
+        }
         return edgeKV.put(cleanKey(key), String(value));
       },
       async delete(key) {

@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260710-edgeone-resume-draft-v1");
+console.info("product-review rating version: 20260710-edgeone-server-draft-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -40,6 +40,8 @@ let currentIndex = 0;
 let isRendering = false;
 let scrollTimer = null;
 let submittingAll = false;
+let draftSaveTimer = null;
+let draftSaving = false;
 
 function today() {
   const d = new Date();
@@ -82,22 +84,69 @@ function serializeDraft(draft) {
   };
 }
 
+
+function buildDraftPayload() {
+  return {
+    draft_date: today(),
+    reviewer,
+    current_index: currentIndex,
+    updated_at: new Date().toISOString(),
+    style_ids: styles.map(item => item.id),
+    score_field_ids: scoreFields.map(item => item.id),
+    drafts: drafts.map(serializeDraft)
+  };
+}
+
+function applyDraftProgress(saved, name = reviewer) {
+  if (!saved || saved.draft_date !== today() || String(saved.reviewer || '').trim() !== String(name || '').trim()) return false;
+  const savedDrafts = Array.isArray(saved.drafts) ? saved.drafts : [];
+  if (!savedDrafts.length || !drafts.length) return false;
+  const byStyle = new Map(savedDrafts.map(item => [String(item.style_id || ''), item]));
+  drafts = drafts.map((draft, index) => {
+    const savedDraft = byStyle.get(String(draft.style_id || '')) || savedDrafts[index];
+    if (!savedDraft) return draft;
+    const scores = { ...draft.scores };
+    const touched_scores = { ...draft.touched_scores };
+    for (const field of scoreFields) {
+      if (savedDraft.scores && Object.prototype.hasOwnProperty.call(savedDraft.scores, field.id)) {
+        const max = normalizeMaxScore(field.max_score);
+        scores[field.id] = Math.min(max, Math.max(0, Number.parseInt(savedDraft.scores[field.id], 10) || 0));
+      }
+      if (savedDraft.touched_scores && Object.prototype.hasOwnProperty.call(savedDraft.touched_scores, field.id)) {
+        touched_scores[field.id] = Boolean(savedDraft.touched_scores[field.id]);
+      }
+    }
+    return {
+      ...draft,
+      season: savedDraft.season ?? draft.season,
+      base_price: savedDraft.base_price ?? draft.base_price,
+      remark: savedDraft.remark ?? draft.remark,
+      scores,
+      touched_scores
+    };
+  });
+  currentIndex = Math.max(0, Math.min(styles.length - 1, Number.parseInt(saved.current_index ?? saved.currentIndex, 10) || 0));
+  drafts.forEach((_, index) => calculate(index));
+  return true;
+}
+
 function saveDraftProgress() {
   if (!reviewer || !Array.isArray(drafts) || !drafts.length || submittingAll) return;
   try {
-    const payload = {
-      date: today(),
-      reviewer,
-      currentIndex,
-      updatedAt: new Date().toISOString(),
-      styleIds: styles.map(item => item.id),
-      scoreFieldIds: scoreFields.map(item => item.id),
-      drafts: drafts.map(serializeDraft)
-    };
-    localStorage.setItem(draftStorageKey(), JSON.stringify(payload));
+    const payload = buildDraftPayload();
+    localStorage.setItem(draftStorageKey(), JSON.stringify({
+      date: payload.draft_date,
+      reviewer: payload.reviewer,
+      currentIndex: payload.current_index,
+      updatedAt: payload.updated_at,
+      styleIds: payload.style_ids,
+      scoreFieldIds: payload.score_field_ids,
+      drafts: payload.drafts
+    }));
   } catch (e) {
     console.warn('保存本地评分进度失败', e);
   }
+  scheduleServerDraftSave();
 }
 
 function clearDraftProgress(name = reviewer) {
@@ -106,6 +155,38 @@ function clearDraftProgress(name = reviewer) {
     localStorage.removeItem(draftStorageKey(name));
   } catch (e) {
     console.warn('清理本地评分进度失败', e);
+  }
+}
+
+
+function scheduleServerDraftSave(delay = 800) {
+  if (!reviewer || !drafts.length || submittingAll) return;
+  window.clearTimeout(draftSaveTimer);
+  draftSaveTimer = window.setTimeout(() => saveServerDraftProgress(), delay);
+}
+
+async function saveServerDraftProgress() {
+  if (!reviewer || !drafts.length || submittingAll || draftSaving) return;
+  draftSaving = true;
+  try {
+    await requestJson('/api/public/draft', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(buildDraftPayload())
+    });
+  } catch (e) {
+    console.warn('保存服务端评分草稿失败，将保留本机临时草稿', e);
+  } finally {
+    draftSaving = false;
+  }
+}
+
+async function clearServerDraftProgress(name = reviewer) {
+  if (!name) return;
+  try {
+    await requestJson(`/api/public/draft?reviewer=${encodeURIComponent(name)}`, { method: 'DELETE' });
+  } catch (e) {
+    console.warn('清理服务端评分草稿失败', e);
   }
 }
 
@@ -120,37 +201,27 @@ function restoreDraftProgress(name = reviewer) {
       localStorage.removeItem(draftStorageKey(name));
       return false;
     }
-    const savedDrafts = Array.isArray(saved.drafts) ? saved.drafts : [];
-    const byStyle = new Map(savedDrafts.map(item => [String(item.style_id || ''), item]));
-    drafts = drafts.map((draft, index) => {
-      const savedDraft = byStyle.get(String(draft.style_id || '')) || savedDrafts[index];
-      if (!savedDraft) return draft;
-      const scores = { ...draft.scores };
-      const touched_scores = { ...draft.touched_scores };
-      for (const field of scoreFields) {
-        if (savedDraft.scores && Object.prototype.hasOwnProperty.call(savedDraft.scores, field.id)) {
-          const max = normalizeMaxScore(field.max_score);
-          scores[field.id] = Math.min(max, Math.max(0, Number.parseInt(savedDraft.scores[field.id], 10) || 0));
-        }
-        if (savedDraft.touched_scores && Object.prototype.hasOwnProperty.call(savedDraft.touched_scores, field.id)) {
-          touched_scores[field.id] = Boolean(savedDraft.touched_scores[field.id]);
-        }
-      }
-      return {
-        ...draft,
-        season: savedDraft.season ?? draft.season,
-        base_price: savedDraft.base_price ?? draft.base_price,
-        remark: savedDraft.remark ?? draft.remark,
-        scores,
-        touched_scores
-      };
-    });
-    currentIndex = Math.max(0, Math.min(styles.length - 1, Number.parseInt(saved.currentIndex, 10) || 0));
-    drafts.forEach((_, index) => calculate(index));
-    return true;
+    return applyDraftProgress({
+      reviewer: saved.reviewer,
+      draft_date: saved.date,
+      current_index: saved.currentIndex,
+      drafts: saved.drafts
+    }, name);
   } catch (e) {
     console.warn('恢复本地评分进度失败', e);
     try { localStorage.removeItem(draftStorageKey(name)); } catch (_) {}
+    return false;
+  }
+}
+
+async function restoreServerDraftProgress(name = reviewer) {
+  if (!name || !drafts.length) return false;
+  try {
+    const data = await requestJson(`/api/public/draft?reviewer=${encodeURIComponent(name)}`);
+    if (!data.draft) return false;
+    return applyDraftProgress(data.draft, name);
+  } catch (e) {
+    console.warn('恢复服务端评分草稿失败，尝试读取本机草稿', e);
     return false;
   }
 }
@@ -345,7 +416,8 @@ async function loadStyles() {
   styles = data.styles || [];
   drafts = styles.map(makeDraft);
   currentIndex = 0;
-  const restored = restoreDraftProgress(reviewer);
+  let restored = await restoreServerDraftProgress(reviewer);
+  if (!restored) restored = restoreDraftProgress(reviewer);
   renderSlides();
   return restored;
 }
@@ -569,6 +641,7 @@ async function submitCurrentAndNext() {
       }
     });
     clearDraftProgress();
+    await clearServerDraftProgress();
     showView(doneView);
     doneText.textContent = `${reviewer}，你已提交 ${data.scores?.length || styles.length} 个款式的评分。`;
   } catch (e) {
@@ -676,5 +749,17 @@ restartBtn.addEventListener('click', () => {
   showView(nameView);
 });
 
-window.addEventListener('beforeunload', saveDraftProgress);
+window.addEventListener('beforeunload', () => {
+  saveDraftProgress();
+  if (reviewer && drafts.length && !submittingAll) {
+    try {
+      fetch('/api/public/draft', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(buildDraftPayload()),
+        keepalive: true
+      });
+    } catch (_) {}
+  }
+});
 purgeExpiredDrafts();

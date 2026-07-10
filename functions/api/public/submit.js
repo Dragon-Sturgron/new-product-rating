@@ -41,6 +41,9 @@ export async function onRequestPost({ request, env }) {
     for (const item of normalized) {
       scores.push(await storage.createScore(item));
     }
+    if (typeof storage.deletePublicDraft === 'function') {
+      try { await storage.deletePublicDraft(reviewer); } catch (_) {}
+    }
     return json({ ok: true, submission_id, submitted_at, scores }, 201);
   } catch (e) {
     return json({ ok: false, message: e.message || '批量提交评分失败' }, e.status || 400);
