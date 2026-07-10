@@ -1,3 +1,4 @@
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -5,7 +6,7 @@ const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders }
+    headers: { 'content-type': 'application/json; charset=utf-8', ...extraHeaders }
   });
 }
 
@@ -53,6 +54,7 @@ function base64UrlDecode(input) {
 }
 
 function fallbackSignature(data, secret) {
+  // 兜底给不支持 WebCrypto/btoa/atob 的边缘运行时使用；Cloudflare 仍优先使用 HMAC-SHA256。
   const text = `${secret}|${data}|${secret}`;
   let h1 = 0x811c9dc5;
   let h2 = 0x9e3779b9;
@@ -92,13 +94,8 @@ function safeEqual(a, b) {
   return result === 0;
 }
 
-function getCookie(request, name) {
-  const cookie = request.headers.get('Cookie') || '';
-  return cookie
-    .split(';')
-    .map(v => v.trim())
-    .find(v => v.startsWith(name + '='))
-    ?.slice(name.length + 1);
+function getAdminUsername(env) {
+  return String(env.ADMIN_USERNAME || 'admin').trim();
 }
 
 function getSessionIdleSeconds(env) {
@@ -108,7 +105,7 @@ function getSessionIdleSeconds(env) {
   return minutes * 60;
 }
 
-async function createSessionCookie(request, env, username) {
+async function createToken(env, username) {
   const secret = env.SESSION_SECRET || env.ADMIN_PASSWORD;
   const now = Date.now();
   const idleSeconds = getSessionIdleSeconds(env);
@@ -118,37 +115,36 @@ async function createSessionCookie(request, env, username) {
     exp: now + idleSeconds * 1000
   }));
   const signature = await hmac(payload, secret);
-  const token = `${payload}.${signature}`;
-  const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
-  return `session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${idleSeconds}${secure}`;
+  return { token: `${payload}.${signature}`, maxAge: idleSeconds };
 }
 
-async function verifySession(request, env) {
-  const token = getCookie(request, 'session');
-  if (!token) return null;
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return null;
-  const secret = env.SESSION_SECRET || env.ADMIN_PASSWORD;
-  if (!secret) return null;
-  const expected = await hmac(payload, secret);
-  if (!safeEqual(signature, expected)) return null;
+export async function onRequestPost({ request, env }) {
   try {
-    const data = JSON.parse(base64UrlDecode(payload));
-    if (!data.exp || Date.now() >= data.exp) return null;
-    return { username: String(data.user || env.ADMIN_USERNAME || 'admin') };
-  } catch {
-    return null;
-  }
-}
+    if (!env.ADMIN_PASSWORD) return json({ ok: false, message: '未配置 ADMIN_PASSWORD 环境变量' }, 500);
 
-export async function onRequestGet({ request, env }) {
-  const session = await verifySession(request, env);
-  if (!session) {
-    return json({ ok: false, message: '未登录或登录已过期' }, 401, {
-      'Set-Cookie': 'session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      return json({ ok: false, message: '请求格式错误' }, 400);
+    }
+
+    const expectedUsername = getAdminUsername(env);
+    const expectedPassword = String(env.ADMIN_PASSWORD || '').trim();
+    const inputUsername = String(body.username || '').trim();
+    const inputPassword = String(body.password || '').trim();
+
+    if (!safeEqual(inputUsername, expectedUsername) || !safeEqual(inputPassword, expectedPassword)) {
+      return json({ ok: false, message: '账号或密码错误，请检查阿里云环境变量 ADMIN_USERNAME / ADMIN_PASSWORD 是否和输入完全一致' }, 401);
+    }
+
+    const { token, maxAge } = await createToken(env, expectedUsername);
+    const url = new URL(request.url);
+    const secure = url.protocol === 'https:' ? '; Secure' : '';
+    return json({ ok: true, idle_minutes: Math.round(maxAge / 60) }, 200, {
+      'Set-Cookie': `session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`
     });
+  } catch (err) {
+    return json({ ok: false, message: `登录接口异常：${err && err.message ? err.message : String(err)}` }, 500);
   }
-  return json({ ok: true, user: session.username, idle_minutes: Math.round(getSessionIdleSeconds(env) / 60) }, 200, {
-    'Set-Cookie': await createSessionCookie(request, env, session.username)
-  });
 }

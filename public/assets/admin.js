@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260710-edgeone-v2");
+console.info("product-review admin version: 20260710-edgeone-idle-v3");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -46,6 +46,8 @@ let editingScoreMeta = null;
 let sessionGuardStarted = false;
 let sessionIdleTimer = null;
 let sessionLastRefreshAt = 0;
+let sessionLocalExpireAt = 0;
+const SESSION_EXPIRE_STORAGE_KEY = 'product_review_admin_session_expire_at';
 const sessionIdleMinutes = Number(window.__SESSION_IDLE_MINUTES__ || 120);
 const sessionIdleMs = Math.max(1, sessionIdleMinutes) * 60 * 1000;
 const sessionRefreshIntervalMs = Math.min(5 * 60 * 1000, Math.max(30 * 1000, sessionIdleMs / 3));
@@ -225,11 +227,13 @@ function makeScoreFieldId() {
   return `field_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 function showLogin() {
+  try { sessionStorage.removeItem(SESSION_EXPIRE_STORAGE_KEY); } catch {}
   stopSessionIdleGuard();
   appView.classList.add('hidden');
   loginView.classList.remove('hidden');
 }
 function showApp() {
+  markSessionActivityLocal();
   loginView.classList.add('hidden');
   appView.classList.remove('hidden');
   startSessionIdleGuard();
@@ -247,18 +251,38 @@ function stopSessionIdleGuard() {
   window.clearTimeout(sessionIdleTimer);
   ['click', 'input', 'keydown', 'touchstart', 'mousemove'].forEach(name => document.removeEventListener(name, handleSessionActivity));
 }
+function markSessionActivityLocal() {
+  sessionLocalExpireAt = Date.now() + sessionIdleMs;
+  try { sessionStorage.setItem(SESSION_EXPIRE_STORAGE_KEY, String(sessionLocalExpireAt)); } catch {}
+}
+function getStoredSessionExpireAt() {
+  try { return Number(sessionStorage.getItem(SESSION_EXPIRE_STORAGE_KEY) || 0); } catch { return sessionLocalExpireAt || 0; }
+}
+async function expireSessionNow(message = '长时间未操作，请重新登录') {
+  window.clearTimeout(sessionIdleTimer);
+  await fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => null);
+  showLogin();
+  showMessage(message, 'error');
+}
+function checkLocalSessionExpiry() {
+  if (loginView && !loginView.classList.contains('hidden')) return;
+  const expiresAt = getStoredSessionExpireAt();
+  if (expiresAt && Date.now() >= expiresAt) {
+    expireSessionNow('长时间未操作，请重新登录');
+  }
+}
 function handleSessionActivity() {
   if (loginView && !loginView.classList.contains('hidden')) return;
+  markSessionActivityLocal();
   resetSessionIdleTimer(true);
 }
 function resetSessionIdleTimer(shouldRefresh) {
+  checkLocalSessionExpiry();
   window.clearTimeout(sessionIdleTimer);
-  sessionIdleTimer = window.setTimeout(async () => {
-    await fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => null);
-    showLogin();
-    showMessage('长时间未操作，请重新登录', 'error');
+  sessionIdleTimer = window.setTimeout(() => {
+    expireSessionNow('长时间未操作，请重新登录');
   }, sessionIdleMs);
-  if (!shouldRefresh) return;
+  if (!shouldRefresh) { markSessionActivityLocal(); return; }
   const now = Date.now();
   if (now - sessionLastRefreshAt < sessionRefreshIntervalMs) return;
   sessionLastRefreshAt = now;
@@ -266,6 +290,8 @@ function resetSessionIdleTimer(shouldRefresh) {
     if (response.status === 401) {
       showLogin();
       showMessage('登录已过期，请重新登录', 'error');
+    } else if (response.ok) {
+      markSessionActivityLocal();
     }
   }).catch(() => null);
 }
@@ -1044,10 +1070,17 @@ cancelScoreEditBtn.addEventListener('click', () => { editingScoreId = null; edit
 $('#closeHistoryBtn').addEventListener('click', () => historyPanel.classList.add('hidden'));
 $('#printBtn').addEventListener('click', () => window.print());
 
+
+window.addEventListener('focus', checkLocalSessionExpiry);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) checkLocalSessionExpiry();
+});
+
 async function checkLogin() {
   try {
     await requestJson('/api/me');
     showApp();
+    markSessionActivityLocal();
     resetStyleForm();
     await loadSettings();
     await Promise.all([loadStyles(), loadScores()]);

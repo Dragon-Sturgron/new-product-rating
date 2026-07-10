@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260624-score-systems-v1");
+console.info("product-review rating version: 20260710-edgeone-resume-draft-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -42,7 +42,117 @@ let scrollTimer = null;
 let submittingAll = false;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function safeDraftName(name) {
+  return encodeURIComponent(String(name || '').trim().replace(/\s+/g, ' '));
+}
+
+function draftStoragePrefix() {
+  return `new-product-rating:draft:${today()}:`;
+}
+
+function draftStorageKey(name = reviewer) {
+  return `${draftStoragePrefix()}${safeDraftName(name)}`;
+}
+
+function purgeExpiredDrafts() {
+  const activePrefix = draftStoragePrefix();
+  const remove = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('new-product-rating:draft:') && !key.startsWith(activePrefix)) remove.push(key);
+  }
+  remove.forEach(key => localStorage.removeItem(key));
+}
+
+function serializeDraft(draft) {
+  return {
+    style_id: draft.style_id,
+    season: draft.season || '',
+    base_price: draft.base_price ?? '',
+    remark: draft.remark || '',
+    scores: draft.scores || {},
+    touched_scores: draft.touched_scores || {}
+  };
+}
+
+function saveDraftProgress() {
+  if (!reviewer || !Array.isArray(drafts) || !drafts.length || submittingAll) return;
+  try {
+    const payload = {
+      date: today(),
+      reviewer,
+      currentIndex,
+      updatedAt: new Date().toISOString(),
+      styleIds: styles.map(item => item.id),
+      scoreFieldIds: scoreFields.map(item => item.id),
+      drafts: drafts.map(serializeDraft)
+    };
+    localStorage.setItem(draftStorageKey(), JSON.stringify(payload));
+  } catch (e) {
+    console.warn('保存本地评分进度失败', e);
+  }
+}
+
+function clearDraftProgress(name = reviewer) {
+  if (!name) return;
+  try {
+    localStorage.removeItem(draftStorageKey(name));
+  } catch (e) {
+    console.warn('清理本地评分进度失败', e);
+  }
+}
+
+function restoreDraftProgress(name = reviewer) {
+  purgeExpiredDrafts();
+  if (!name || !drafts.length) return false;
+  try {
+    const raw = localStorage.getItem(draftStorageKey(name));
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved || saved.date !== today() || String(saved.reviewer || '').trim() !== String(name || '').trim()) {
+      localStorage.removeItem(draftStorageKey(name));
+      return false;
+    }
+    const savedDrafts = Array.isArray(saved.drafts) ? saved.drafts : [];
+    const byStyle = new Map(savedDrafts.map(item => [String(item.style_id || ''), item]));
+    drafts = drafts.map((draft, index) => {
+      const savedDraft = byStyle.get(String(draft.style_id || '')) || savedDrafts[index];
+      if (!savedDraft) return draft;
+      const scores = { ...draft.scores };
+      const touched_scores = { ...draft.touched_scores };
+      for (const field of scoreFields) {
+        if (savedDraft.scores && Object.prototype.hasOwnProperty.call(savedDraft.scores, field.id)) {
+          const max = normalizeMaxScore(field.max_score);
+          scores[field.id] = Math.min(max, Math.max(0, Number.parseInt(savedDraft.scores[field.id], 10) || 0));
+        }
+        if (savedDraft.touched_scores && Object.prototype.hasOwnProperty.call(savedDraft.touched_scores, field.id)) {
+          touched_scores[field.id] = Boolean(savedDraft.touched_scores[field.id]);
+        }
+      }
+      return {
+        ...draft,
+        season: savedDraft.season ?? draft.season,
+        base_price: savedDraft.base_price ?? draft.base_price,
+        remark: savedDraft.remark ?? draft.remark,
+        scores,
+        touched_scores
+      };
+    });
+    currentIndex = Math.max(0, Math.min(styles.length - 1, Number.parseInt(saved.currentIndex, 10) || 0));
+    drafts.forEach((_, index) => calculate(index));
+    return true;
+  } catch (e) {
+    console.warn('恢复本地评分进度失败', e);
+    try { localStorage.removeItem(draftStorageKey(name)); } catch (_) {}
+    return false;
+  }
 }
 
 function escapeHtml(text) {
@@ -235,7 +345,9 @@ async function loadStyles() {
   styles = data.styles || [];
   drafts = styles.map(makeDraft);
   currentIndex = 0;
+  const restored = restoreDraftProgress(reviewer);
   renderSlides();
+  return restored;
 }
 
 
@@ -390,6 +502,7 @@ function goToSlide(index, smooth = true, force = false) {
     return false;
   }
   currentIndex = target;
+  saveDraftProgress();
   const slideWidth = scoreCarousel.clientWidth || 1;
   scoreCarousel.scrollTo({ left: slideWidth * currentIndex, behavior: smooth ? 'smooth' : 'auto' });
   updateStatus();
@@ -455,6 +568,7 @@ async function submitCurrentAndNext() {
         drafts[index].score_id = score?.id || null;
       }
     });
+    clearDraftProgress();
     showView(doneView);
     doneText.textContent = `${reviewer}，你已提交 ${data.scores?.length || styles.length} 个款式的评分。`;
   } catch (e) {
@@ -472,8 +586,9 @@ reviewerForm.addEventListener('submit', async (event) => {
   }
   reviewerNameText.textContent = reviewer;
   try {
-    await loadStyles();
+    const restored = await loadStyles();
     showView(ratingView);
+    if (restored) showMessage(`已恢复 ${reviewer} 今天未提交的评分进度，继续从第 ${currentIndex + 1} 款开始。`);
   } catch (e) {
     showMessage(e.message, 'error');
   }
@@ -487,6 +602,7 @@ scoreCarousel.addEventListener('pointerdown', (event) => {
   const index = Number(slide.dataset.index);
   if (drafts[index]) {
     drafts[index].touched_scores[input.dataset.field] = true;
+    saveDraftProgress();
     if (index === currentIndex) updateStatus();
   }
 });
@@ -498,6 +614,7 @@ scoreCarousel.addEventListener('change', (event) => {
   const index = Number(slide.dataset.index);
   if (drafts[index]) {
     drafts[index].touched_scores[input.dataset.field] = true;
+    saveDraftProgress();
     if (index === currentIndex) updateStatus();
   }
 });
@@ -519,6 +636,7 @@ scoreCarousel.addEventListener('input', (event) => {
     input.nextElementSibling.textContent = `${input.value} / ${input.max}`;
     updateSlideTotal(index);
   }
+  saveDraftProgress();
   if (index === currentIndex) updateStatus();
 });
 
@@ -534,6 +652,7 @@ scoreCarousel.addEventListener('scroll', () => {
       return;
     }
     currentIndex = targetIndex;
+    saveDraftProgress();
     updateStatus();
   }, 80);
 });
@@ -547,6 +666,7 @@ slideDots.addEventListener('click', (event) => {
   if (btn && !btn.disabled) goToSlide(Number(btn.dataset.index));
 });
 restartBtn.addEventListener('click', () => {
+  clearDraftProgress();
   reviewer = '';
   styles = [];
   drafts = [];
@@ -555,3 +675,6 @@ restartBtn.addEventListener('click', () => {
   reviewerForm.reset();
   showView(nameView);
 });
+
+window.addEventListener('beforeunload', saveDraftProgress);
+purgeExpiredDrafts();

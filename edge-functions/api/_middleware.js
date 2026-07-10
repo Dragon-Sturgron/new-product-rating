@@ -1,3 +1,4 @@
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -5,7 +6,7 @@ const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extraHeaders }
+    headers: { 'content-type': 'application/json; charset=utf-8', ...extraHeaders }
   });
 }
 
@@ -53,6 +54,7 @@ function base64UrlDecode(input) {
 }
 
 function fallbackSignature(data, secret) {
+  // 兜底给不支持 WebCrypto/btoa/atob 的边缘运行时使用；Cloudflare 仍优先使用 HMAC-SHA256。
   const text = `${secret}|${data}|${secret}`;
   let h1 = 0x811c9dc5;
   let h2 = 0x9e3779b9;
@@ -135,20 +137,33 @@ async function verifySession(request, env) {
   try {
     const data = JSON.parse(base64UrlDecode(payload));
     if (!data.exp || Date.now() >= data.exp) return null;
-    return { username: String(data.user || env.ADMIN_USERNAME || 'admin') };
+    return { username: String(data.user || 'admin') };
   } catch {
     return null;
   }
 }
 
-export async function onRequestGet({ request, env }) {
-  const session = await verifySession(request, env);
-  if (!session) {
-    return json({ ok: false, message: '未登录或登录已过期' }, 401, {
-      'Set-Cookie': 'session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
-    });
+export async function onRequest(context) {
+  const { request, env, next } = context;
+  const url = new URL(request.url);
+
+  if (request.method === 'OPTIONS') return next();
+  if (url.pathname === '/api/login' || url.pathname === '/api/logout' || url.pathname.startsWith('/api/public/')) return next();
+
+  let session = null;
+  try {
+    session = await verifySession(request, env);
+  } catch {
+    session = null;
   }
-  return json({ ok: true, user: session.username, idle_minutes: Math.round(getSessionIdleSeconds(env) / 60) }, 200, {
-    'Set-Cookie': await createSessionCookie(request, env, session.username)
+  if (!session) return json({ ok: false, message: '未登录或登录已过期' }, 401);
+
+  const response = await next();
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', await createSessionCookie(request, env, session.username));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
   });
 }
