@@ -72,7 +72,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
           <div class="section-title">
             <div>
               <h2>图片存储配置</h2>
-              <p class="tip">图片存储方式在这里配置，减少 Cloudflare 环境变量数量。R2 仍需要在 Pages 后台绑定 IMAGE_BUCKET；七牛云/OSS/COS 等 S3 兼容参数可直接填在这里。</p>
+              <p class="tip">图片存储方式直接在后台设置里配置，不再依赖环境变量。国内建议使用七牛云、阿里云 OSS、腾讯云 COS 等 S3 兼容 OSS。</p>
             </div>
             <div class="form-actions">
               <button id="saveImageSettingsBtn" class="primary" type="submit" form="imageStorageForm">保存图片配置</button>
@@ -82,15 +82,24 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             <label>图片存储方式
               <select name="driver">
                 <option value="url">只粘贴图片链接</option>
-                <option value="r2">Cloudflare R2</option>
-                <option value="s3">S3兼容OSS / 七牛云 / 阿里云OSS / 腾讯云COS</option>
+                <option value="s3">国内OSS / S3兼容：七牛云、阿里云OSS、腾讯云COS</option>
+                <option value="r2">Cloudflare R2（仅 Cloudflare Pages 使用）</option>
+              </select>
+            </label>
+            <label class="s3-settings">国内OSS服务商
+              <select name="s3_provider">
+                <option value="custom">自定义 S3 兼容</option>
+                <option value="qiniu">七牛云 Kodo</option>
+                <option value="aliyun">阿里云 OSS</option>
+                <option value="tencent">腾讯云 COS</option>
+                <option value="minio">MinIO / 其他 S3</option>
               </select>
             </label>
             <label>上传大小上限MB<input name="image_max_size_mb" type="number" min="1" max="50" step="1" placeholder="10" /></label>
             <label>文件名前缀<input name="image_key_prefix" placeholder="review-images" /></label>
-            <label class="wide">图片公开访问域名<input name="public_image_base_url" placeholder="https://img.example.com，可不填；R2不填时走 /api/images" /></label>
+            <label class="wide">图片公开访问域名 / CDN域名<input name="public_image_base_url" placeholder="例如 https://img.example.com；国内OSS建议配置 CDN 或公开访问域名" /></label>
             <div class="s3-settings wide">
-              <label>S3 Endpoint<input name="s3_endpoint" placeholder="例如 https://s3-cn-east-1.qiniucs.com" /></label>
+              <label>S3 Endpoint<input name="s3_endpoint" placeholder="例如七牛云 https://s3-cn-east-1.qiniucs.com" /></label>
               <label>Bucket / 空间名<input name="s3_bucket" placeholder="你的 Bucket 或七牛空间名" /></label>
               <label>Region / 区域<input name="s3_region" placeholder="例如 cn-east-1 / oss-cn-guangzhou" /></label>
               <label>AccessKey ID<input name="s3_access_key_id" autocomplete="off" /></label>
@@ -175,7 +184,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
 
       <section id="scoreSection" class="card list-card hidden">
         <div class="section-title search-title">
-          <h2>评分结果 / 后台编辑</h2>
+          <h2>评分结果</h2>
           <form id="scoreSearchForm" class="search-form">
             <input name="search" placeholder="搜索款式、季节、评分人、备注" />
             <input name="date_from" type="date" title="开始日期" />

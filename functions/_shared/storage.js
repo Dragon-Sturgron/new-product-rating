@@ -22,7 +22,8 @@ export const DEFAULT_IMAGE_SETTINGS = {
   s3_region: 'us-east-1',
   s3_access_key_id: '',
   s3_secret_access_key: '',
-  s3_force_path_style: true
+  s3_force_path_style: true,
+  s3_provider: 'custom'
 };
 
 function normalizeImageDriverValue(value) {
@@ -87,7 +88,8 @@ export function normalizeImageSettings(value = {}, previous = DEFAULT_IMAGE_SETT
     s3_region: String(input.s3_region ?? input.S3_REGION ?? input.oss_region ?? prev.s3_region ?? 'us-east-1').trim() || 'us-east-1',
     s3_access_key_id: String(input.s3_access_key_id ?? input.S3_ACCESS_KEY_ID ?? input.oss_access_key_id ?? prev.s3_access_key_id ?? '').trim(),
     s3_secret_access_key: secret,
-    s3_force_path_style: normalizeBoolSetting(input.s3_force_path_style ?? input.S3_FORCE_PATH_STYLE ?? prev.s3_force_path_style, true)
+    s3_force_path_style: normalizeBoolSetting(input.s3_force_path_style ?? input.S3_FORCE_PATH_STYLE ?? prev.s3_force_path_style, true),
+    s3_provider: String(input.s3_provider ?? input.provider ?? prev.s3_provider ?? 'custom').trim() || 'custom'
   };
 }
 

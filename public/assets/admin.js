@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260710-edgeone-idle-v3");
+console.info("product-review admin version: 20260710-edgeone-viewonly-oss-settings-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -380,10 +380,48 @@ function normalizeImageSettingsLocal(settings = {}) {
     s3_force_path_style: settings.s3_force_path_style !== false
   };
 }
+
+function guessS3Provider(endpoint = '') {
+  const text = String(endpoint || '').toLowerCase();
+  if (text.includes('qiniu') || text.includes('qiniucs')) return 'qiniu';
+  if (text.includes('aliyuncs') || text.includes('aliyun')) return 'aliyun';
+  if (text.includes('myqcloud') || text.includes('tencent') || text.includes('cos.')) return 'tencent';
+  if (text.includes('minio')) return 'minio';
+  return 'custom';
+}
+function applyS3ProviderPreset(provider) {
+  if (!imageStorageForm) return;
+  const form = imageStorageForm;
+  const setIfEmpty = (name, value) => {
+    const el = form.elements[name];
+    if (el && !String(el.value || '').trim()) el.value = value;
+  };
+  if (provider && provider !== 'custom') {
+    if (form.elements.driver) form.elements.driver.value = 's3';
+  }
+  if (provider === 'qiniu') {
+    setIfEmpty('s3_endpoint', 'https://s3-cn-east-1.qiniucs.com');
+    setIfEmpty('s3_region', 'cn-east-1');
+    if (form.elements.s3_force_path_style) form.elements.s3_force_path_style.checked = true;
+  } else if (provider === 'aliyun') {
+    setIfEmpty('s3_endpoint', 'https://oss-cn-guangzhou.aliyuncs.com');
+    setIfEmpty('s3_region', 'oss-cn-guangzhou');
+    if (form.elements.s3_force_path_style) form.elements.s3_force_path_style.checked = false;
+  } else if (provider === 'tencent') {
+    setIfEmpty('s3_endpoint', 'https://cos.ap-guangzhou.myqcloud.com');
+    setIfEmpty('s3_region', 'ap-guangzhou');
+    if (form.elements.s3_force_path_style) form.elements.s3_force_path_style.checked = false;
+  } else if (provider === 'minio') {
+    setIfEmpty('s3_region', 'us-east-1');
+    if (form.elements.s3_force_path_style) form.elements.s3_force_path_style.checked = true;
+  }
+  toggleImageSettingsFields();
+}
 function fillImageSettingsForm(settings = {}) {
   if (!imageStorageForm) return;
   const data = normalizeImageSettingsLocal(settings);
   imageStorageForm.elements.driver.value = ['url', 'r2', 's3'].includes(data.driver) ? data.driver : 'url';
+  if (imageStorageForm.elements.s3_provider) imageStorageForm.elements.s3_provider.value = data.s3_provider || guessS3Provider(data.s3_endpoint || '') || 'custom';
   imageStorageForm.elements.image_max_size_mb.value = data.image_max_size_mb || 10;
   imageStorageForm.elements.image_key_prefix.value = data.image_key_prefix || 'review-images';
   imageStorageForm.elements.public_image_base_url.value = data.public_image_base_url || '';
@@ -408,7 +446,8 @@ function readImageSettingsForm() {
     s3_region: form.elements.s3_region.value.trim(),
     s3_access_key_id: form.elements.s3_access_key_id.value.trim(),
     s3_secret_access_key: form.elements.s3_secret_access_key.value,
-    s3_force_path_style: form.elements.s3_force_path_style.checked
+    s3_force_path_style: form.elements.s3_force_path_style.checked,
+    s3_provider: form.elements.s3_provider ? form.elements.s3_provider.value : 'custom'
   };
 }
 function toggleImageSettingsFields() {
@@ -507,7 +546,7 @@ function renderScoreGroupDetail(group) {
               <thead><tr>
                 <th>产品图</th><th>款式编码</th><th>季节</th><th>基本售价</th>
                 ${labels.map(item => `<th>${escapeHtml(item.label)}<small class="score-type-mini">${scoreTypeLabel(item.score_type, item)}</small></th>`).join('')}
-                <th>各评分体系得分</th><th>备注</th><th class="no-print">操作</th>
+                <th>各评分体系得分</th><th>备注</th>
               </tr></thead>
               <tbody>
                 ${group.scores.map(score => {
@@ -524,11 +563,6 @@ function renderScoreGroupDetail(group) {
                       ${labels.map(item => `<td class="score-cell">${escapeHtml(values[item.key] ?? '')}</td>`).join('')}
                       <td class="total-cell system-total-cell">${renderScoreSystemSummary(score)}</td>
                       <td class="remark-cell" title="${escapeHtml(score.remark || '')}">${escapeHtml(score.remark || '')}</td>
-                      <td class="no-print"><div class="actions">
-                        <button class="ghost" data-score-action="edit" data-id="${escapeHtml(score.id)}">编辑</button>
-                        <button class="ghost" data-score-action="history" data-id="${escapeHtml(score.id)}">历史</button>
-                        <button class="danger-light" data-score-action="delete" data-id="${escapeHtml(score.id)}">删除</button>
-                      </div></td>
                     </tr>
                   `;
                 }).join('')}
@@ -643,7 +677,6 @@ function renderScores() {
         <td>${escapeHtml(group.submitted_at || '-')}</td>
         <td class="no-print"><div class="actions">
           <button class="ghost" type="button" data-score-group-action="toggle" data-group-index="${index}">${opened ? '收起' : '查看'}</button>
-          <button class="danger-light" type="button" data-score-group-action="delete" data-group-index="${index}">删除</button>
         </div></td>
       </tr>
       ${opened ? renderScoreGroupDetail(group) : ''}
@@ -756,6 +789,7 @@ $$('.tab').forEach(tab => tab.addEventListener('click', () => setActiveTab(tab.d
 
 if (imageStorageForm) {
   imageStorageForm.elements.driver.addEventListener('change', toggleImageSettingsFields);
+  if (imageStorageForm.elements.s3_provider) imageStorageForm.elements.s3_provider.addEventListener('change', () => applyS3ProviderPreset(imageStorageForm.elements.s3_provider.value));
   imageStorageForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     setButtonBusy(saveImageSettingsBtn, true, '保存中...');
@@ -992,17 +1026,7 @@ scoresBody.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
-      if (!confirm(`确定删除 ${group.reviewer} 在 ${group.submitted_at || '-'} 提交的 ${group.scores.length} 款评分吗？`)) return;
-      setButtonBusy(groupBtn, true, '删除中...');
-      try {
-        for (const item of group.scores) {
-          await requestJson(`/api/scores/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
-        }
-        showMessage('本次提交已删除');
-        selectedScoreGroupKey = null;
-        await loadScores();
-      } catch(e) { showMessage(e.message, 'error'); }
-      finally { setButtonBusy(groupBtn, false); }
+      showMessage('评分结果仅允许查看，不能删除或修改。', 'error');
       return;
     }
   }
@@ -1011,21 +1035,7 @@ scoresBody.addEventListener('click', async (event) => {
   if (!btn) return;
   const score = scores.find(row => String(row.id) === String(btn.dataset.id));
   if (!score) return;
-  if (btn.dataset.scoreAction === 'edit') fillScoreEditForm(score);
-  if (btn.dataset.scoreAction === 'history') {
-    try {
-      const data = await requestJson(`/api/scores/${encodeURIComponent(score.id)}/history`);
-      historyPanel.classList.remove('hidden');
-      historyList.innerHTML = (data.history || []).length ? data.history.map(item => `
-        <article class="history-item"><header><span>${escapeHtml(item.action)}</span><span>${escapeHtml(item.changed_at)}</span></header><pre>${escapeHtml(item.snapshot_json)}</pre></article>
-      `).join('') : '<p class="tip">暂无修改历史。</p>';
-      historyPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch(e) { showMessage(e.message, 'error'); }
-  }
-  if (btn.dataset.scoreAction === 'delete') {
-    if (!confirm(`确定删除 ${score.reviewer} 对 ${score.style_code} 的评分吗？`)) return;
-    try { await requestJson(`/api/scores/${encodeURIComponent(score.id)}`, { method: 'DELETE' }); showMessage('评分已删除'); await loadScores(); } catch(e) { showMessage(e.message, 'error'); }
-  }
+  showMessage('评分结果仅允许查看，不能编辑、删除或修改。', 'error');
 });
 scoreEditForm.addEventListener('input', (event) => {
   const range = event.target.closest('[data-score-item-id]');
