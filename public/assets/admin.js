@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260710-grade-rules-v1");
+console.info("product-review admin version: 20260710-remove-grade-settings-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
