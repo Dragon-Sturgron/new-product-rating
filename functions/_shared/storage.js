@@ -897,6 +897,7 @@ function createKVStorage(env) {
   async function getSettings() { return getJson(key('settings'), {}); }
   async function setSettings(settings) { await putJson(key('settings'), settings); }
   async function getScoreTypesSetting() { const s = await getSettings(); return normalizeScoreTypes(s.score_types || DEFAULT_SCORE_TYPES); }
+  async function getGradeRulesSetting() { const s = await getSettings(); return normalizeGradeRules(s.score_grade_rules || s.grade_rules || DEFAULT_GRADE_RULES); }
   async function getStyleById(id) { return id ? getJson(keyStyle(String(id)), null) : null; }
   async function getScoreById(id) {
     const row = id ? await getJson(keyScore(String(id)), null) : null;
