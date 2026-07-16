@@ -1,4 +1,4 @@
-import { getStorage, normalizeScoreFields, normalizeScoreTypes, normalizeImageSettings } from '../_shared/storage.js';
+import { getStorage, normalizeScoreFields, normalizeScoreTypes, normalizeImageSettings, normalizeGradeRules } from '../_shared/storage.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -20,7 +20,8 @@ export async function onRequestGet({ env }) {
     const scoreTypes = storage.getScoreTypes ? await storage.getScoreTypes() : normalizeScoreTypes([]);
     const scoreFields = await storage.getScoreFields();
     const imageSettings = storage.getImageSettings ? await storage.getImageSettings() : normalizeImageSettings({});
-    return json({ ok: true, settings: { score_page_count: scorePageCount, score_types: scoreTypes, score_fields: scoreFields, image_settings: redactImageSettings(imageSettings) } });
+    const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : normalizeGradeRules({});
+    return json({ ok: true, settings: { score_page_count: scorePageCount, score_types: scoreTypes, score_fields: scoreFields, image_settings: redactImageSettings(imageSettings), grade_rules: gradeRules } });
   } catch (e) {
     return json({ ok: false, message: e.message || '读取设置失败' }, e.status || 500);
   }
@@ -52,6 +53,12 @@ export async function onRequestPut({ request, env }) {
       settings.image_settings = redactImageSettings(await storage.setImageSettings(payload.image_settings));
     } else if (storage.getImageSettings) {
       settings.image_settings = redactImageSettings(await storage.getImageSettings());
+    }
+    if (payload.grade_rules !== undefined) {
+      if (!storage.setGradeRules) throw new Error('当前数据存储方式暂不支持保存评分等级配置');
+      settings.grade_rules = await storage.setGradeRules(normalizeGradeRules(payload.grade_rules));
+    } else if (storage.getGradeRules) {
+      settings.grade_rules = await storage.getGradeRules();
     }
     return json({ ok: true, settings });
   } catch (e) {

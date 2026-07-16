@@ -10,7 +10,8 @@ export async function onRequestGet({ env }) {
     const styles = await storage.listStyles({ activeOnly: true });
     const scoreTypes = storage.getScoreTypes ? await storage.getScoreTypes() : [];
     const scoreFields = await storage.getScoreFields();
-    return json({ ok: true, styles, score_types: scoreTypes, score_fields: scoreFields });
+    const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : null;
+    return json({ ok: true, styles, score_types: scoreTypes, score_fields: scoreFields, grade_rules: gradeRules });
   } catch (e) {
     return json({ ok: false, message: e.message || '读取评分款式失败' }, e.status || 500);
   }

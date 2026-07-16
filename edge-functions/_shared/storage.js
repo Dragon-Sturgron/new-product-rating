@@ -26,6 +26,16 @@ export const DEFAULT_IMAGE_SETTINGS = {
   s3_provider: 'custom'
 };
 
+export const DEFAULT_GRADE_RULES = {
+  description: '评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下',
+  rules: [
+    { label: '大单', min_percent: 80 },
+    { label: '中单', min_percent: 60 },
+    { label: '小单试水', min_percent: 40 },
+    { label: '建议不下', min_percent: 0 }
+  ]
+};
+
 function normalizeImageDriverValue(value) {
   const raw = String(value || 'url').trim().toLowerCase();
   if (['r2', 'cloudflare-r2'].includes(raw)) return 'r2';
@@ -60,6 +70,35 @@ export function imageSettingsFromEnv(env = {}) {
     s3_secret_access_key: env.S3_SECRET_ACCESS_KEY || env.OSS_SECRET_ACCESS_KEY || '',
     s3_force_path_style: env.S3_FORCE_PATH_STYLE ?? true
   });
+}
+
+export function normalizeGradeRules(value = DEFAULT_GRADE_RULES) {
+  let input = value;
+  if (typeof value === 'string') {
+    try { input = JSON.parse(value); } catch { input = DEFAULT_GRADE_RULES; }
+  }
+  if (!input || typeof input !== 'object') input = DEFAULT_GRADE_RULES;
+  const fallback = DEFAULT_GRADE_RULES;
+  const description = String(input.description ?? input.text ?? fallback.description).trim() || fallback.description;
+  let rules = Array.isArray(input.rules) ? input.rules : [];
+  if (!rules.length) {
+    rules = [
+      { label: input.high_label || '大单', min_percent: input.high_min_percent ?? input.high ?? 80 },
+      { label: input.middle_label || '中单', min_percent: input.middle_min_percent ?? input.middle ?? 60 },
+      { label: input.low_label || '小单试水', min_percent: input.low_min_percent ?? input.low ?? 40 },
+      { label: input.reject_label || '建议不下', min_percent: input.reject_min_percent ?? input.reject ?? 0 }
+    ];
+  }
+  const normalized = rules.map((rule, index) => {
+    const label = String(rule?.label ?? rule?.name ?? '').trim();
+    if (!label) return null;
+    let min = Number(rule?.min_percent ?? rule?.min ?? rule?.rate ?? 0);
+    if (!Number.isFinite(min)) min = 0;
+    min = Math.max(0, Math.min(100, Math.round(min * 10) / 10));
+    return { label, min_percent: min, order: index };
+  }).filter(Boolean).sort((a, b) => b.min_percent - a.min_percent || a.order - b.order).slice(0, 20)
+    .map(({ label, min_percent }) => ({ label, min_percent }));
+  return { description, rules: normalized.length ? normalized : fallback.rules.map(item => ({ ...item })) };
 }
 
 export function normalizeImageSettings(value = {}, previous = DEFAULT_IMAGE_SETTINGS) {
@@ -98,14 +137,13 @@ const LEGACY_KEY_BY_ID = Object.fromEntries(DEFAULT_SCORE_FIELDS.map(item => [it
 const LEGACY_ID_BY_KEY = Object.fromEntries(DEFAULT_SCORE_FIELDS.map(item => [item.key, item.id]));
 const LEGACY_LABEL_BY_ID = Object.fromEntries(DEFAULT_SCORE_FIELDS.map(item => [item.id, item.label]));
 
-export function gradeByScore(total, maxTotal = 50) {
+export function gradeByScore(total, maxTotal = 50, gradeRules = DEFAULT_GRADE_RULES) {
   const max = Number(maxTotal);
   if (!Number.isFinite(max) || max <= 0) return '不参与评级';
-  const rate = Number(total || 0) / max;
-  if (rate >= 0.8) return '大单';
-  if (rate >= 0.6) return '中单';
-  if (rate >= 0.4) return '小单试水';
-  return '建议不下';
+  const percent = (Number(total || 0) / max) * 100;
+  const config = normalizeGradeRules(gradeRules);
+  const matched = config.rules.find(rule => percent >= Number(rule.min_percent || 0));
+  return matched?.label || config.rules[config.rules.length - 1]?.label || '建议不下';
 }
 
 function toIntId(value, label = 'ID') {
@@ -325,7 +363,7 @@ function fieldsFromPayloadOrDefault(payload, scoreFields) {
   return configured;
 }
 
-export function normalizeScorePayload(payload = {}, scoreFields = DEFAULT_SCORE_FIELDS) {
+export function normalizeScorePayload(payload = {}, scoreFields = DEFAULT_SCORE_FIELDS, gradeRules = DEFAULT_GRADE_RULES) {
   const fields = fieldsFromPayloadOrDefault(payload, scoreFields);
   const data = {
     style_id: normalizeStyleIdValue(payload.style_id, '款式ID'),
@@ -357,7 +395,7 @@ export function normalizeScorePayload(payload = {}, scoreFields = DEFAULT_SCORE_
   });
   data.score_items_json = JSON.stringify(data.score_items);
   data.total_score = total;
-  data.grade = gradeByScore(total, maxTotal);
+  data.grade = gradeByScore(total, maxTotal, gradeRules);
 
   const legacy = legacyScoresFromItems(data.score_items);
   Object.assign(data, legacy);
@@ -603,6 +641,11 @@ function createD1Storage(env) {
     return normalizeScoreFields(value, types);
   }
 
+  async function getGradeRules() {
+    const value = await getSetting('score_grade_rules', JSON.stringify(DEFAULT_GRADE_RULES));
+    return normalizeGradeRules(value);
+  }
+
   async function getStyleById(id) {
     await ensureTables();
     return DB().prepare('SELECT * FROM review_styles WHERE id = ? AND deleted_at IS NULL').bind(toIntId(id, '款式ID')).first();
@@ -788,6 +831,14 @@ function createD1Storage(env) {
     async setScoreTypes(types) {
       const normalized = normalizeScoreTypes(types);
       await setSetting('score_types', JSON.stringify(normalized));
+      return normalized;
+    },
+
+    async getGradeRules() { return getGradeRules(); },
+
+    async setGradeRules(rules) {
+      const normalized = normalizeGradeRules(rules);
+      await setSetting('score_grade_rules', JSON.stringify(normalized));
       return normalized;
     },
 
@@ -1032,6 +1083,8 @@ function createKVStorage(env) {
     async setScorePageCount(count) { const s = await getSettings(); s.score_page_count = safeCount(count, 1); await setSettings(s); return s.score_page_count; },
     async getScoreTypes() { return getScoreTypesSetting(); },
     async setScoreTypes(types) { const s = await getSettings(); s.score_types = normalizeScoreTypes(types); await setSettings(s); return s.score_types; },
+    async getGradeRules() { return getGradeRulesSetting(); },
+    async setGradeRules(rules) { const s = await getSettings(); s.score_grade_rules = normalizeGradeRules(rules); await setSettings(s); return s.score_grade_rules; },
     async getScoreFields() { return getScoreFields(); },
     async setScoreFields(fields) { const s = await getSettings(); s.score_fields = normalizeScoreFields(fields, normalizeScoreTypes(s.score_types || DEFAULT_SCORE_TYPES)); await setSettings(s); return s.score_fields; },
     async getPublicDraft(reviewer) {
@@ -1157,6 +1210,8 @@ function createHttpStorage(env) {
     async setScorePageCount(count) { return Number((await call('/settings', { method: 'PUT', body: JSON.stringify({ score_page_count: count }) })).settings?.score_page_count || count); },
     async getScoreTypes() { return normalizeScoreTypes((await call('/settings')).settings?.score_types || DEFAULT_SCORE_TYPES); },
     async setScoreTypes(types) { return normalizeScoreTypes((await call('/settings', { method: 'PUT', body: JSON.stringify({ score_types: normalizeScoreTypes(types) }) })).settings?.score_types || types); },
+    async getGradeRules() { return normalizeGradeRules((await call('/settings')).settings?.grade_rules || DEFAULT_GRADE_RULES); },
+    async setGradeRules(rules) { return normalizeGradeRules((await call('/settings', { method: 'PUT', body: JSON.stringify({ grade_rules: normalizeGradeRules(rules) }) })).settings?.grade_rules || rules); },
     async getScoreFields() { const settings = (await call('/settings')).settings || {}; return normalizeScoreFields(settings.score_fields || DEFAULT_SCORE_FIELDS, settings.score_types || DEFAULT_SCORE_TYPES); },
     async setScoreFields(fields) { const settings = (await call('/settings', { method: 'PUT', body: JSON.stringify({ score_fields: fields }) })).settings || {}; return normalizeScoreFields(settings.score_fields || fields, settings.score_types || DEFAULT_SCORE_TYPES); },
     async getImageSettings() { return normalizeImageSettings((await call('/settings')).settings?.image_settings || {}, imageSettingsFromEnv(env)); },

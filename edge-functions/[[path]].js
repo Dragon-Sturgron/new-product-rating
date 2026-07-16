@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260710-edgeone-idle-v3" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260710-grade-rules-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -106,6 +106,34 @@ function adminHtml(adminPath, sessionIdleMinutes) {
               <label>SecretKey<input name="s3_secret_access_key" type="password" autocomplete="new-password" placeholder="留空表示不修改已有 SecretKey" /></label>
               <label class="switch-label"><span>Path Style</span><input name="s3_force_path_style" type="checkbox" checked /></label>
             </div>
+          </form>
+        </section>
+
+        <section class="card nested-card no-print">
+          <div class="section-title">
+            <div>
+              <h2>评分等级说明</h2>
+              <p class="tip">这里控制前端顶部说明文字，以及每个评分体系按百分比换算后的等级，例如大单、中单、小单试水、建议不下。</p>
+            </div>
+            <div class="form-actions">
+              <button id="saveGradeRulesBtn" class="primary" type="submit" form="gradeRuleForm">保存等级配置</button>
+            </div>
+          </div>
+          <form id="gradeRuleForm" class="grade-rule-form">
+            <label class="wide">前端说明文字
+              <textarea name="description" rows="2" placeholder="例如：评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下"></textarea>
+            </label>
+            <div class="grade-rules-grid">
+              <label>等级1名称<input name="rule_label_0" placeholder="大单" /></label>
+              <label>最低百分比<input name="rule_min_0" type="number" min="0" max="100" step="1" placeholder="80" /></label>
+              <label>等级2名称<input name="rule_label_1" placeholder="中单" /></label>
+              <label>最低百分比<input name="rule_min_1" type="number" min="0" max="100" step="1" placeholder="60" /></label>
+              <label>等级3名称<input name="rule_label_2" placeholder="小单试水" /></label>
+              <label>最低百分比<input name="rule_min_2" type="number" min="0" max="100" step="1" placeholder="40" /></label>
+              <label>等级4名称<input name="rule_label_3" placeholder="建议不下" /></label>
+              <label>最低百分比<input name="rule_min_3" type="number" min="0" max="100" step="1" placeholder="0" /></label>
+            </div>
+            <p class="tip wide">判断方式：当前评分体系得分 ÷ 当前评分体系满分 × 100%，从高到低匹配区间。例如设置 80、60、40、0，即 80%以上大单，60-79%中单，40-59%小单试水，40%以下建议不下。</p>
           </form>
         </section>
 
@@ -223,7 +251,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260710-edgeone-idle-v3" defer></script>
+  <script src="/assets/admin.js?v=20260710-grade-rules-v1" defer></script>
 </body>
 </html>`;
 }

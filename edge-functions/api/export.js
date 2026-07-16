@@ -16,7 +16,7 @@ function scoreTypeId(item) {
 function scoreTypeLabel(item) {
   return String(item?.score_type_label || item?.type_label || scoreTypeId(item)).trim() || scoreTypeId(item);
 }
-function scoreSystemSummaries(items = []) {
+function scoreSystemSummaries(items = [], gradeRules) {
   const groups = new Map();
   for (const item of items || []) {
     const id = scoreTypeId(item);
@@ -25,7 +25,7 @@ function scoreSystemSummaries(items = []) {
     group.total += Number(item.score || 0);
     group.max += normalizeMaxScore(item.max_score);
   }
-  return Array.from(groups.values()).map(group => ({ ...group, text: `${group.total}/${group.max} ${gradeByScore(group.total, group.max)}` }));
+  return Array.from(groups.values()).map(group => ({ ...group, text: `${group.total}/${group.max} ${gradeByScore(group.total, group.max, gradeRules)}` }));
 }
 
 export async function onRequestGet({ request, env }) {
@@ -38,6 +38,7 @@ export async function onRequestGet({ request, env }) {
       date_to: url.searchParams.get('date_to') || '',
       limit: '10000'
     });
+    const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : undefined;
     const scoreColumns = [];
     const systemColumns = [];
     for (const score of scores) {
@@ -46,14 +47,14 @@ export async function onRequestGet({ request, env }) {
         const title = `${scoreTypeLabel(item)}-${item.label}`;
         if (!scoreColumns.some(col => col.key === key)) scoreColumns.push({ key, title });
       }
-      for (const system of scoreSystemSummaries(score.score_items || [])) {
+      for (const system of scoreSystemSummaries(score.score_items || [], gradeRules)) {
         if (!systemColumns.some(col => col.id === system.id)) systemColumns.push({ id: system.id, title: `${system.label}总分` });
       }
     }
     const headers = ['产品图', '款式编码', '季节', '基本售价', ...scoreColumns.map(col => col.title), ...systemColumns.map(col => col.title), '评分人', '评分日期', '备注', '创建时间'];
     const rows = scores.map(score => {
       const values = Object.fromEntries((score.score_items || []).map(item => [`${scoreTypeId(item)}::${item.label}`, item.score]));
-      const systems = Object.fromEntries(scoreSystemSummaries(score.score_items || []).map(item => [item.id, item.text]));
+      const systems = Object.fromEntries(scoreSystemSummaries(score.score_items || [], gradeRules).map(item => [item.id, item.text]));
       return [
         score.product_image,
         score.style_code,

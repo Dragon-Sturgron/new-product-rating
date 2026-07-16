@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260710-edgeone-beijing-daily-v1");
+console.info("product-review rating version: 20260710-grade-rules-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -31,7 +31,20 @@ const defaultScoreFields = [
   { id: 'comfort', label: '背负舒适度', max_score: 10, score_type: 'main', score_type_label: '综合评分' }
 ];
 
+
+const defaultGradeRules = {
+  description: '评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下',
+  rules: [
+    { label: '大单', min_percent: 80 },
+    { label: '中单', min_percent: 60 },
+    { label: '小单试水', min_percent: 40 },
+    { label: '建议不下', min_percent: 0 }
+  ]
+};
+const gradeRuleIntro = $('#gradeRuleIntro');
+
 let scoreTypes = defaultScoreTypes.map(item => ({ ...item }));
+let gradeRules = null;
 let scoreFields = defaultScoreFields.map(item => ({ ...item }));
 let reviewer = '';
 let styles = [];
@@ -325,14 +338,37 @@ function showMessage(text, type = 'success') {
   showMessage.timer = window.setTimeout(() => messageBox.classList.add('hidden'), 3600);
 }
 
+
+function normalizeGradeRules(value = defaultGradeRules) {
+  let input = value;
+  if (typeof value === 'string') {
+    try { input = JSON.parse(value); } catch { input = defaultGradeRules; }
+  }
+  if (!input || typeof input !== 'object') input = defaultGradeRules;
+  const description = String(input.description ?? input.text ?? defaultGradeRules.description).trim() || defaultGradeRules.description;
+  const rawRules = Array.isArray(input.rules) && input.rules.length ? input.rules : defaultGradeRules.rules;
+  const rules = rawRules.map((rule, index) => {
+    const label = String(rule?.label ?? rule?.name ?? '').trim();
+    if (!label) return null;
+    let min = Number(rule?.min_percent ?? rule?.min ?? 0);
+    if (!Number.isFinite(min)) min = 0;
+    min = Math.max(0, Math.min(100, Math.round(min * 10) / 10));
+    return { label, min_percent: min, order: index };
+  }).filter(Boolean).sort((a, b) => b.min_percent - a.min_percent || a.order - b.order)
+    .map(({ label, min_percent }) => ({ label, min_percent }));
+  return { description, rules: rules.length ? rules : defaultGradeRules.rules.map(item => ({ ...item })) };
+}
+function applyGradeRuleIntro() {
+  const config = normalizeGradeRules(gradeRules || defaultGradeRules);
+  if (gradeRuleIntro) gradeRuleIntro.textContent = config.description;
+}
 function gradeByScore(total, maxTotal = 50) {
   const max = Number(maxTotal);
   if (!Number.isFinite(max) || max <= 0) return '不参与评级';
-  const rate = Number(total || 0) / max;
-  if (rate >= 0.8) return '大单';
-  if (rate >= 0.6) return '中单';
-  if (rate >= 0.4) return '小单试水';
-  return '建议不下';
+  const percent = (Number(total || 0) / max) * 100;
+  const config = normalizeGradeRules(gradeRules || defaultGradeRules);
+  const matched = config.rules.find(rule => percent >= Number(rule.min_percent || 0));
+  return matched?.label || config.rules[config.rules.length - 1]?.label || '建议不下';
 }
 
 function makeDraft(style) {
@@ -413,6 +449,8 @@ async function loadStyles() {
   const data = await requestJson('/api/public/styles');
   scoreTypes = normalizeScoreTypes(data.score_types || defaultScoreTypes);
   scoreFields = normalizeScoreFields(data.score_fields || defaultScoreFields);
+  gradeRules = normalizeGradeRules(data.grade_rules || defaultGradeRules);
+  applyGradeRuleIntro();
   styles = data.styles || [];
   drafts = styles.map(makeDraft);
   currentIndex = 0;
@@ -763,3 +801,5 @@ window.addEventListener('beforeunload', () => {
   }
 });
 purgeExpiredDrafts();
+
+applyGradeRuleIntro();

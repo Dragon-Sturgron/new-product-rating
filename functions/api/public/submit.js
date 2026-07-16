@@ -57,6 +57,7 @@ export async function onRequestPost({ request, env }) {
     }
 
     const scoreFields = await storage.getScoreFields();
+    const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : undefined;
     const submission_id = String(payload.submission_id || '').trim() || newSubmissionId();
 
     const normalized = list.map(item => normalizeScorePayload({
@@ -65,7 +66,7 @@ export async function onRequestPost({ request, env }) {
       review_date: item.review_date || review_date,
       submission_id,
       submitted_at
-    }, scoreFields));
+    }, scoreFields, gradeRules));
 
     const scores = typeof storage.createScoresBatch === 'function'
       ? await storage.createScoresBatch(normalized, { reviewer, review_date, submission_id, submitted_at, skip_duplicate_check: true })

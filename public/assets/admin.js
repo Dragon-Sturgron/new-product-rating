@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260710-edgeone-viewonly-oss-settings-v1");
+console.info("product-review admin version: 20260710-grade-rules-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -29,6 +29,8 @@ const scoreTypeList = $('#scoreTypeList');
 const addScoreTypeBtn = $('#addScoreTypeBtn');
 const imageStorageForm = $('#imageStorageForm');
 const saveImageSettingsBtn = $('#saveImageSettingsBtn');
+const gradeRuleForm = $('#gradeRuleForm');
+const saveGradeRulesBtn = $('#saveGradeRulesBtn');
 const styleDropZone = $('#styleDropZone');
 const styleImageFile = $('#styleImageFile');
 const stylePreview = $('#stylePreview');
@@ -39,6 +41,7 @@ let scoreGroups = [];
 let selectedScoreGroupKey = null;
 let scoreFields = [];
 let scoreTypes = [];
+let gradeRules = null;
 let editingStyleId = null;
 let inlineEditingStyleId = null;
 let editingScoreId = null;
@@ -89,6 +92,17 @@ const defaultScoreFields = [
   { id: 'capacity', label: '容量收纳', max_score: 10, score_type: 'main', score_type_label: '综合评分' },
   { id: 'comfort', label: '背负舒适度', max_score: 10, score_type: 'main', score_type_label: '综合评分' }
 ];
+
+
+const defaultGradeRules = {
+  description: '评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下',
+  rules: [
+    { label: '大单', min_percent: 80 },
+    { label: '中单', min_percent: 60 },
+    { label: '小单试水', min_percent: 40 },
+    { label: '建议不下', min_percent: 0 }
+  ]
+};
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function escapeHtml(text) {
@@ -152,14 +166,53 @@ function isMainScoreField(field) {
 function scoreTypeLabel(value, field = {}) {
   return scoreTypeMeta(value, field).label;
 }
+
+function normalizeGradeRulesLocal(value = defaultGradeRules) {
+  let input = value;
+  if (typeof value === 'string') {
+    try { input = JSON.parse(value); } catch { input = defaultGradeRules; }
+  }
+  if (!input || typeof input !== 'object') input = defaultGradeRules;
+  const description = String(input.description ?? input.text ?? defaultGradeRules.description).trim() || defaultGradeRules.description;
+  const rawRules = Array.isArray(input.rules) && input.rules.length ? input.rules : defaultGradeRules.rules;
+  const rules = rawRules.map((rule, index) => {
+    const label = String(rule?.label ?? rule?.name ?? '').trim();
+    if (!label) return null;
+    let min = Number(rule?.min_percent ?? rule?.min ?? 0);
+    if (!Number.isFinite(min)) min = 0;
+    min = Math.max(0, Math.min(100, Math.round(min * 10) / 10));
+    return { label, min_percent: min, order: index };
+  }).filter(Boolean).sort((a, b) => b.min_percent - a.min_percent || a.order - b.order).slice(0, 20)
+    .map(({ label, min_percent }) => ({ label, min_percent }));
+  return { description, rules: rules.length ? rules : defaultGradeRules.rules.map(item => ({ ...item })) };
+}
+function fillGradeRulesForm(value = defaultGradeRules) {
+  if (!gradeRuleForm) return;
+  const data = normalizeGradeRulesLocal(value);
+  gradeRuleForm.elements.description.value = data.description;
+  for (let i = 0; i < 4; i += 1) {
+    const rule = data.rules[i] || defaultGradeRules.rules[i] || { label: '', min_percent: 0 };
+    if (gradeRuleForm.elements[`rule_label_${i}`]) gradeRuleForm.elements[`rule_label_${i}`].value = rule.label || '';
+    if (gradeRuleForm.elements[`rule_min_${i}`]) gradeRuleForm.elements[`rule_min_${i}`].value = Number(rule.min_percent ?? 0);
+  }
+}
+function readGradeRulesForm() {
+  if (!gradeRuleForm) return normalizeGradeRulesLocal(gradeRules || defaultGradeRules);
+  const rules = [];
+  for (let i = 0; i < 4; i += 1) {
+    const label = gradeRuleForm.elements[`rule_label_${i}`]?.value?.trim() || '';
+    const min = gradeRuleForm.elements[`rule_min_${i}`]?.value;
+    if (label) rules.push({ label, min_percent: Number(min) });
+  }
+  return normalizeGradeRulesLocal({ description: gradeRuleForm.elements.description.value.trim(), rules });
+}
 function gradeByScore(total, maxTotal = 50) {
   const max = Number(maxTotal);
   if (!Number.isFinite(max) || max <= 0) return '不参与评级';
-  const rate = Number(total || 0) / max;
-  if (rate >= 0.8) return '大单';
-  if (rate >= 0.6) return '中单';
-  if (rate >= 0.4) return '小单试水';
-  return '建议不下';
+  const percent = (Number(total || 0) / max) * 100;
+  const config = normalizeGradeRulesLocal(gradeRules || defaultGradeRules);
+  const matched = config.rules.find(rule => percent >= Number(rule.min_percent || 0));
+  return matched?.label || config.rules[config.rules.length - 1]?.label || '建议不下';
 }
 
 function scoreSystemSummariesFromItems(items = []) {
@@ -687,9 +740,11 @@ async function loadSettings() {
   const data = await requestJson('/api/settings');
   scoreTypes = normalizeScoreTypesLocal(data.settings?.score_types || defaultScoreTypes);
   scoreFields = normalizeScoreFieldsLocal(data.settings?.score_fields || defaultScoreFields);
+  gradeRules = normalizeGradeRulesLocal(data.settings?.grade_rules || defaultGradeRules);
   renderScoreTypeEditor();
   renderScoreFieldEditor();
   fillImageSettingsForm(data.settings?.image_settings || {});
+  fillGradeRulesForm(gradeRules);
 }
 async function loadStyles() {
   const params = new URLSearchParams(new FormData(styleSearchForm));
@@ -805,6 +860,27 @@ if (imageStorageForm) {
       showMessage('图片存储配置已保存');
     } catch (e) { showMessage(e.message, 'error'); }
     finally { setButtonBusy(saveImageSettingsBtn, false); }
+  });
+}
+
+
+if (gradeRuleForm) {
+  gradeRuleForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setButtonBusy(saveGradeRulesBtn, true, '保存中...');
+    try {
+      const payload = readGradeRulesForm();
+      const data = await requestJson('/api/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ grade_rules: payload })
+      });
+      gradeRules = normalizeGradeRulesLocal(data.settings?.grade_rules || payload);
+      fillGradeRulesForm(gradeRules);
+      renderScores();
+      showMessage('评分等级说明已保存，前端刷新后生效');
+    } catch (e) { showMessage(e.message, 'error'); }
+    finally { setButtonBusy(saveGradeRulesBtn, false); }
   });
 }
 
