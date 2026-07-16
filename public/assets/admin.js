@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260710-remove-grade-settings-v1");
+console.info("product-review admin version: 20260710-grade-desc-only-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -198,13 +198,15 @@ function fillGradeRulesForm(value = defaultGradeRules) {
 }
 function readGradeRulesForm() {
   if (!gradeRuleForm) return normalizeGradeRulesLocal(gradeRules || defaultGradeRules);
+  const description = gradeRuleForm.elements.description?.value?.trim() || defaultGradeRules.description;
   const rules = [];
   for (let i = 0; i < 4; i += 1) {
     const label = gradeRuleForm.elements[`rule_label_${i}`]?.value?.trim() || '';
     const min = gradeRuleForm.elements[`rule_min_${i}`]?.value;
     if (label) rules.push({ label, min_percent: Number(min) });
   }
-  return normalizeGradeRulesLocal({ description: gradeRuleForm.elements.description.value.trim(), rules });
+  const currentRules = normalizeGradeRulesLocal(gradeRules || defaultGradeRules).rules;
+  return normalizeGradeRulesLocal({ description, rules: rules.length ? rules : currentRules });
 }
 function gradeByScore(total, maxTotal = 50) {
   const max = Number(maxTotal);
@@ -878,7 +880,7 @@ if (gradeRuleForm) {
       gradeRules = normalizeGradeRulesLocal(data.settings?.grade_rules || payload);
       fillGradeRulesForm(gradeRules);
       renderScores();
-      showMessage('评分等级说明已保存，前端刷新后生效');
+      showMessage('前端说明文字已保存，前端刷新后生效');
     } catch (e) { showMessage(e.message, 'error'); }
     finally { setButtonBusy(saveGradeRulesBtn, false); }
   });

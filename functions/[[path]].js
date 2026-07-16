@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260716-remove-grade-settings" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260716-grade-desc-only" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -106,6 +106,26 @@ function adminHtml(adminPath, sessionIdleMinutes) {
               <label>SecretKey<input name="s3_secret_access_key" type="password" autocomplete="new-password" placeholder="留空表示不修改已有 SecretKey" /></label>
               <label class="switch-label"><span>Path Style</span><input name="s3_force_path_style" type="checkbox" checked /></label>
             </div>
+          </form>
+        </section>
+
+
+
+        <section class="card nested-card no-print">
+          <div class="section-title">
+            <div>
+              <h2>前端说明文字</h2>
+              <p class="tip">这里控制前端评分页顶部显示的说明文字，只修改展示文案，不显示等级区间配置。</p>
+            </div>
+            <div class="form-actions">
+              <button id="saveGradeRulesBtn" class="primary" type="submit" form="gradeRuleForm">保存说明文字</button>
+            </div>
+          </div>
+          <form id="gradeRuleForm" class="grade-rule-form">
+            <label class="wide">前端说明文字
+              <textarea name="description" placeholder="例如：评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下"></textarea>
+            </label>
+            <p class="tip wide">评分等级区间不在页面配置；这里只保留前端顶部说明文字。</p>
           </form>
         </section>
 
@@ -223,7 +243,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260716-remove-grade-settings" defer></script>
+  <script src="/assets/admin.js?v=20260716-grade-desc-only" defer></script>
 </body>
 </html>`;
 }
