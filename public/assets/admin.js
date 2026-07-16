@@ -732,6 +732,7 @@ function renderScores() {
         <td>${escapeHtml(group.submitted_at || '-')}</td>
         <td class="no-print"><div class="actions">
           <button class="ghost" type="button" data-score-group-action="toggle" data-group-index="${index}">${opened ? '收起' : '查看'}</button>
+          <button class="danger-light" type="button" data-score-group-action="delete" data-group-index="${index}">删除</button>
         </div></td>
       </tr>
       ${opened ? renderScoreGroupDetail(group) : ''}
@@ -1104,7 +1105,18 @@ scoresBody.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
-      showMessage('评分结果仅允许查看，不能删除或修改。', 'error');
+      if (!confirm(`确定删除 ${group.reviewer} 在 ${group.submitted_at || '-'} 提交的 ${group.scores.length} 款评分结果吗？删除后不可恢复。`)) return;
+      setButtonBusy(groupBtn, true, '删除中...');
+      try {
+        await Promise.all(group.scores.map(score => requestJson(`/api/scores/${encodeURIComponent(score.id)}`, { method: 'DELETE' })));
+        showMessage('评分结果已删除');
+        selectedScoreGroupKey = null;
+        await loadScores();
+      } catch (e) {
+        showMessage(e.message || '删除失败', 'error');
+      } finally {
+        setButtonBusy(groupBtn, false);
+      }
       return;
     }
   }
@@ -1113,7 +1125,7 @@ scoresBody.addEventListener('click', async (event) => {
   if (!btn) return;
   const score = scores.find(row => String(row.id) === String(btn.dataset.id));
   if (!score) return;
-  showMessage('评分结果仅允许查看，不能编辑、删除或修改。', 'error');
+  showMessage('评分结果不允许编辑修改；如需删除，请在提交记录行点击“删除”。', 'error');
 });
 scoreEditForm.addEventListener('input', (event) => {
   const range = event.target.closest('[data-score-item-id]');

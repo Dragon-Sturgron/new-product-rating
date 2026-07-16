@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260710-grade-rules-v1");
+console.info("product-review rating version: 20260716-name-page-desc-sync-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -42,6 +42,7 @@ const defaultGradeRules = {
   ]
 };
 const gradeRuleIntro = $('#gradeRuleIntro');
+const nameGradeRuleIntro = $('#nameGradeRuleIntro');
 
 let scoreTypes = defaultScoreTypes.map(item => ({ ...item }));
 let gradeRules = null;
@@ -361,6 +362,20 @@ function normalizeGradeRules(value = defaultGradeRules) {
 function applyGradeRuleIntro() {
   const config = normalizeGradeRules(gradeRules || defaultGradeRules);
   if (gradeRuleIntro) gradeRuleIntro.textContent = config.description;
+  if (nameGradeRuleIntro) nameGradeRuleIntro.textContent = config.description;
+}
+
+async function loadPublicIntro() {
+  try {
+    const data = await requestJson('/api/public/styles');
+    gradeRules = normalizeGradeRules(data.grade_rules || defaultGradeRules);
+    applyGradeRuleIntro();
+    return true;
+  } catch (e) {
+    console.warn('加载前端说明文字失败，继续使用默认说明', e);
+    applyGradeRuleIntro();
+    return false;
+  }
 }
 function gradeByScore(total, maxTotal = 50) {
   const max = Number(maxTotal);
@@ -803,3 +818,4 @@ window.addEventListener('beforeunload', () => {
 purgeExpiredDrafts();
 
 applyGradeRuleIntro();
+loadPublicIntro();

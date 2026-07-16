@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审评分</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260716-grade-desc-only" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260716-name-page-desc-sync" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -24,6 +24,7 @@
         <div>
           <h1>开始评分</h1>
           <p>请先输入你的姓名，之后系统会按后台配置的款式逐个评分。</p>
+          <p id="nameGradeRuleIntro" class="tip name-rule-tip">评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下</p>
         </div>
       </div>
       <form id="reviewerForm" class="login-form">
@@ -74,6 +75,6 @@
       <button id="restartBtn" type="button" class="primary full">重新评分</button>
     </section>
   </main>
-  <script src="/assets/rating.js?v=20260716-grade-desc-only" defer></script>
+  <script src="/assets/rating.js?v=20260716-name-page-desc-sync" defer></script>
 </body>
 </html>

@@ -889,6 +889,13 @@ function createKVStorage(env) {
     }
     await kv.put(k, body);
   }
+  async function deleteKey(k) {
+    if (typeof kv.delete === 'function') {
+      await kv.delete(k);
+    } else {
+      await putJson(k, { deleted: true, updated_at: now() }, { expirationTtl: 60 });
+    }
+  }
   async function getIndex(name) {
     const value = await getJson(key(`${name}:index`), []);
     return Array.isArray(value) ? value : [];
@@ -912,6 +919,25 @@ function createKVStorage(env) {
     const list = await getJson(keyScoreHistory(id), []);
     list.unshift({ id: crypto.randomUUID(), score_id: id, action, snapshot_json: JSON.stringify(snapshot || {}), changed_at: now() });
     await putJson(keyScoreHistory(id), list.slice(0, 100));
+  }
+  async function refreshDailySubmissionMarker(reviewer, reviewDate) {
+    const name = normalizeReviewerName(reviewer);
+    const date = String(reviewDate || '');
+    if (!name || !date) return;
+    const ids = await getIndex('scores');
+    for (const scoreId of ids) {
+      const row = await getScoreById(scoreId);
+      if (row && !row.deleted_at && normalizeReviewerName(row.reviewer) === name && String(row.review_date || '') === date) {
+        await putJson(keySubmissionDay(name, date), {
+          reviewer: row.reviewer,
+          review_date: row.review_date,
+          submission_id: row.submission_id || '',
+          submitted_at: row.submitted_at || row.created_at || ''
+        }, { expirationTtl: Math.max(60, 48 * 60 * 60) });
+        return;
+      }
+    }
+    await deleteKey(keySubmissionDay(name, date));
   }
 
   return {
@@ -1077,6 +1103,7 @@ function createKVStorage(env) {
       if (!old || old.deleted_at) throw new Error('评分记录不存在');
       await putJson(keyScore(String(id)), { ...old, deleted_at: now(), updated_at: now() });
       await addScoreHistory(id, 'delete', old);
+      await refreshDailySubmissionMarker(old.reviewer, old.review_date);
       return true;
     },
     async getScoreHistory(id) { return getJson(keyScoreHistory(String(id)), []); },
