@@ -68,6 +68,17 @@ function withTrailingSlash(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function publicDisplayUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value) return value;
+  // HTTPS 页面无法稳定直接显示 http 图片；当用户填写 http:// 七牛测试域名时，
+  // 通过本站同源 HTTPS 代理展示，仍然按照用户填写的域名拼接真实图片地址。
+  if (/^http:\/\//i.test(value)) {
+    return `/api/public/image-proxy?url=${encodeURIComponent(value)}`;
+  }
+  return value;
+}
+
 export async function uploadImageFromRequest(request, env) {
   const config = await resolveImageSettings(env);
   const driver = normalizeImageDriver(config);
@@ -107,8 +118,9 @@ async function uploadToR2(env, config, key, bytes, contentType) {
   });
 
   const publicBase = withTrailingSlash(config.public_image_base_url);
-  const url = publicBase ? `${publicBase}/${encodeURI(key)}` : `/api/images/${encodeURIComponent(key)}`;
-  return { key, url, storage: 'r2' };
+  const rawUrl = publicBase ? `${publicBase}/${encodeURI(key)}` : `/api/images/${encodeURIComponent(key)}`;
+  const url = publicDisplayUrl(rawUrl);
+  return { key, url, raw_url: rawUrl, storage: 'r2' };
 }
 
 async function uploadToS3(config, key, bytes, contentType) {
@@ -138,7 +150,7 @@ async function uploadToS3(config, key, bytes, contentType) {
 
   const publicBase = withTrailingSlash(config.public_image_base_url);
   const publicUrl = publicBase ? `${publicBase}/${encodeURI(key)}` : url.toString();
-  return { key, url: publicUrl, storage: 's3' };
+  return { key, url: publicDisplayUrl(publicUrl), raw_url: publicUrl, storage: 's3' };
 }
 
 function buildS3ObjectUrl(endpoint, bucket, key, forcePathStyle) {
