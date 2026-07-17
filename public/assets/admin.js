@@ -678,11 +678,25 @@ function readInlineStylePayload(row) {
     style_remark: field('style_remark')?.value?.trim() || ''
   };
 }
-function updateInlineImagePreview(row, url) {
+function updateInlineImagePreview(row, url, options = {}) {
   const preview = row.querySelector('[data-inline-image-preview]');
   const input = row.querySelector('[data-inline-field="product_image"]');
-  if (input) input.value = String(url || '').trim();
+  const shouldUpdateInput = options.updateInput !== false;
+  if (input && shouldUpdateInput) input.value = String(url || '').trim();
   if (preview) preview.innerHTML = renderStylePhoto(url, 'photo inline-photo');
+}
+function updateInlineLocalImagePreview(row, file) {
+  if (!row || !file) return;
+  const previous = row.dataset.localPreviewUrl;
+  if (previous) { try { URL.revokeObjectURL(previous); } catch {} }
+  const localUrl = URL.createObjectURL(file);
+  row.dataset.localPreviewUrl = localUrl;
+  updateInlineImagePreview(row, localUrl, { updateInput: false });
+}
+function clearInlineLocalImagePreview(row) {
+  const previous = row?.dataset?.localPreviewUrl;
+  if (previous) { try { URL.revokeObjectURL(previous); } catch {} }
+  if (row) delete row.dataset.localPreviewUrl;
 }
 function renderStyles() {
   renderStats();
@@ -765,11 +779,31 @@ async function loadScores() {
   scores = data.scores || [];
   renderScores();
 }
+let stylePreviewLocalObjectUrl = '';
+function clearStyleLocalPreviewUrl() {
+  if (stylePreviewLocalObjectUrl) {
+    try { URL.revokeObjectURL(stylePreviewLocalObjectUrl); } catch {}
+    stylePreviewLocalObjectUrl = '';
+  }
+}
+function renderStylePreviewImage(url, note = '') {
+  const safe = String(url || '').trim();
+  stylePreview.innerHTML = safe
+    ? `<img class="image-preview" src="${escapeHtml(safe)}" alt="产品图预览" loading="lazy" referrerpolicy="no-referrer" />${note ? `<small class="preview-note">${escapeHtml(note)}</small>` : ''}`
+    : '<span>拖拽图片到这里，或点击选择图片</span>';
+}
 function setImagePreview(url) {
+  clearStyleLocalPreviewUrl();
   const safe = String(url || '').trim();
   styleForm.elements.product_image.value = safe;
   if (styleForm.elements.product_image_url) styleForm.elements.product_image_url.value = safe;
-  stylePreview.innerHTML = safe ? `<img class="image-preview" src="${escapeHtml(safe)}" alt="产品图预览" loading="lazy" referrerpolicy="no-referrer" />` : '<span>拖拽图片到这里，或点击选择图片</span>';
+  renderStylePreviewImage(safe);
+}
+function setLocalImagePreview(file) {
+  clearStyleLocalPreviewUrl();
+  if (!file) return;
+  stylePreviewLocalObjectUrl = URL.createObjectURL(file);
+  renderStylePreviewImage(stylePreviewLocalObjectUrl, '本地预览，上传成功后才会正式保存');
 }
 function resetStyleForm() {
   editingStyleId = null;
@@ -961,6 +995,7 @@ saveScoreFieldsBtn.addEventListener('click', async () => {
 });
 
 async function uploadAndSetPreview(file) {
+  setLocalImagePreview(file);
   const url = await uploadImageFile(file);
   if (url) setImagePreview(url);
   return url;
@@ -1107,10 +1142,12 @@ stylesBody.addEventListener('change', async (event) => {
   const file = fileInput.files?.[0];
   if (!row || !file) return;
   try {
+    updateInlineLocalImagePreview(row, file);
     const url = await uploadImageFile(file);
+    clearInlineLocalImagePreview(row);
     updateInlineImagePreview(row, url);
     showMessage('图片已上传，点击保存后生效');
-  } catch(e) { showMessage(e.message, 'error'); }
+  } catch(e) { showMessage(`本地图片已预览，但上传失败：${e.message}`, 'error'); }
   finally { fileInput.value = ''; }
 });
 stylesBody.addEventListener('input', (event) => {
