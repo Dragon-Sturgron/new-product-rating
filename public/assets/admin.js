@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260710-grade-desc-only-v1");
+console.info("product-review admin version: 20260717-score-delete-all-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -14,6 +14,7 @@ const cancelStyleEditBtn = $('#cancelStyleEditBtn');
 const stylesBody = $('#stylesBody');
 const styleSearchForm = $('#styleSearchForm');
 const scoreSearchForm = $('#scoreSearchForm');
+const deleteAllScoresBtn = $('#deleteAllScoresBtn');
 const scoresHead = $('#scoresHead');
 const scoresBody = $('#scoresBody');
 const statsGrid = $('#statsGrid');
@@ -1088,6 +1089,31 @@ scoreSearchForm.addEventListener('submit', async (event) => {
   try { await loadScores(); } catch(e) { showMessage(e.message, 'error'); }
   finally { setButtonBusy(submitBtn, false); }
 });
+
+if (deleteAllScoresBtn) {
+  deleteAllScoresBtn.addEventListener('click', async (event) => {
+    if (!scores.length) {
+      showMessage('当前没有可删除的评分结果。', 'error');
+      return;
+    }
+    const groupCount = scoreGroups.length || buildScoreGroups(scores).length;
+    const scoreCount = scores.length;
+    if (!confirm(`确定删除当前查询结果中的全部评分结果吗？\n\n本次将删除 ${groupCount} 次提交、共 ${scoreCount} 款评分记录。删除后不可恢复。`)) return;
+    setButtonBusy(event.currentTarget, true, '删除中...');
+    try {
+      const params = new URLSearchParams(new FormData(scoreSearchForm));
+      const data = await requestJson(`/api/scores/delete-all?${params}`, { method: 'DELETE' });
+      showMessage(`已删除 ${data.deleted_count || 0} 款评分记录。`);
+      selectedScoreGroupKey = null;
+      await loadScores();
+    } catch (e) {
+      showMessage(e.message || '全部删除失败', 'error');
+    } finally {
+      setButtonBusy(event.currentTarget, false);
+    }
+  });
+}
+
 $('#clearScoreSearchBtn').addEventListener('click', async (event) => {
   setButtonBusy(event.currentTarget, true, '重置中...');
   scoreSearchForm.reset();

@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260716-grade-desc-only" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260717-score-delete-all-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -211,6 +211,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             <input name="date_to" type="date" title="结束日期" />
             <button class="primary" type="submit">查询</button>
             <button class="ghost" type="button" id="clearScoreSearchBtn">重置</button>
+            <button class="danger-light" type="button" id="deleteAllScoresBtn">全部删除</button>
           </form>
         </div>
 
@@ -243,7 +244,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260716-score-delete" defer></script>
+  <script src="/assets/admin.js?v=20260717-score-delete-all-v1" defer></script>
 </body>
 </html>`;
 }
