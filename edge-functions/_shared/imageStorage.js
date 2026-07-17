@@ -46,6 +46,12 @@ function safeBaseName(filename = 'image') {
   return name || 'image';
 }
 
+function isUploadFileLike(value) {
+  return !!value
+    && typeof value.arrayBuffer === 'function'
+    && typeof value.size === 'number';
+}
+
 function buildObjectKey(file, config) {
   const prefix = String(config.image_key_prefix || 'review-images')
     .trim()
@@ -71,7 +77,7 @@ export async function uploadImageFromRequest(request, env) {
 
   const form = await request.formData();
   const file = form.get('file') || form.get('image');
-  if (!(file instanceof File)) throw jsonError('请上传图片文件字段 file', 400);
+  if (!isUploadFileLike(file)) throw jsonError('请上传图片文件字段 file', 400);
   if (!String(file.type || '').startsWith('image/')) throw jsonError('只能上传图片文件', 400);
   if (file.size <= 0) throw jsonError('图片文件为空', 400);
   const maxBytes = getMaxBytes(config);
