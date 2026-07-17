@@ -1,4 +1,4 @@
-console.info("product-review admin version: 20260717-score-delete-all-v1");
+console.info("product-review admin version: 20260717-style-delete-all-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -14,6 +14,7 @@ const cancelStyleEditBtn = $('#cancelStyleEditBtn');
 const stylesBody = $('#stylesBody');
 const styleSearchForm = $('#styleSearchForm');
 const scoreSearchForm = $('#scoreSearchForm');
+const deleteAllStylesBtn = $('#deleteAllStylesBtn');
 const deleteAllScoresBtn = $('#deleteAllScoresBtn');
 const scoresHead = $('#scoresHead');
 const scoresBody = $('#scoresBody');
@@ -1017,6 +1018,32 @@ $('#clearStyleSearchBtn').addEventListener('click', async (event) => {
   styleSearchForm.reset();
   try { await loadStyles(); } finally { setButtonBusy(event.currentTarget, false); }
 });
+
+if (deleteAllStylesBtn) {
+  deleteAllStylesBtn.addEventListener('click', async (event) => {
+    if (!styles.length) {
+      showMessage('当前没有可删除的款式。', 'error');
+      return;
+    }
+    const count = styles.length;
+    if (!confirm(`确定删除当前查询结果中的全部已配置款式吗？
+
+本次将删除 ${count} 个款式。删除后不可恢复，前端评分页也不会再显示这些款式。`)) return;
+    setButtonBusy(event.currentTarget, true, '删除中...');
+    try {
+      const params = new URLSearchParams(new FormData(styleSearchForm));
+      const data = await requestJson(`/api/styles/delete-all?${params}`, { method: 'DELETE' });
+      showMessage(`已删除 ${data.deleted_count || 0} 个款式。`);
+      inlineEditingStyleId = null;
+      resetStyleForm();
+      await loadStyles();
+    } catch (e) {
+      showMessage(e.message || '全部删除款式失败', 'error');
+    } finally {
+      setButtonBusy(event.currentTarget, false);
+    }
+  });
+}
 stylesBody.addEventListener('click', async (event) => {
   const btn = event.target.closest('button[data-style-action]');
   if (!btn) return;

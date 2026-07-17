@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260717-score-delete-all-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260717-style-delete-all-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -191,6 +191,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             <input name="search" placeholder="搜索款式、季节、备注" />
             <button class="primary" type="submit">查询</button>
             <button class="ghost" type="button" id="clearStyleSearchBtn">重置</button>
+            <button class="danger-light" type="button" id="deleteAllStylesBtn">全部删除</button>
           </form>
         </div>
         <div class="mobile-help no-print">手机端列表可左右滑动查看完整字段。</div>
@@ -244,7 +245,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260717-score-delete-all-v1" defer></script>
+  <script src="/assets/admin.js?v=20260717-style-delete-all-v1" defer></script>
 </body>
 </html>`;
 }
