@@ -7,10 +7,9 @@ function json(data, status = 200) {
   });
 }
 
-function redactImageSettings(settings = {}) {
-  const copy = { ...settings };
-  if (copy.s3_secret_access_key) copy.s3_secret_access_key = '********';
-  return copy;
+function exposeImageSettings(settings = {}) {
+  // 管理员登录后允许回显 SecretKey；前端默认用 password 隐藏，点击眼睛才显示。
+  return { ...settings };
 }
 
 export async function onRequestGet({ env }) {
@@ -21,7 +20,7 @@ export async function onRequestGet({ env }) {
     const scoreFields = await storage.getScoreFields();
     const imageSettings = storage.getImageSettings ? await storage.getImageSettings() : normalizeImageSettings({});
     const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : normalizeGradeRules({});
-    return json({ ok: true, settings: { score_page_count: scorePageCount, score_types: scoreTypes, score_fields: scoreFields, image_settings: redactImageSettings(imageSettings), grade_rules: gradeRules } });
+    return json({ ok: true, settings: { score_page_count: scorePageCount, score_types: scoreTypes, score_fields: scoreFields, image_settings: exposeImageSettings(imageSettings), grade_rules: gradeRules } });
   } catch (e) {
     return json({ ok: false, message: e.message || '读取设置失败' }, e.status || 500);
   }
@@ -50,9 +49,9 @@ export async function onRequestPut({ request, env }) {
     }
     if (payload.image_settings !== undefined) {
       if (!storage.setImageSettings) throw new Error('当前数据存储方式暂不支持页面保存图片存储配置');
-      settings.image_settings = redactImageSettings(await storage.setImageSettings(payload.image_settings));
+      settings.image_settings = exposeImageSettings(await storage.setImageSettings(payload.image_settings));
     } else if (storage.getImageSettings) {
-      settings.image_settings = redactImageSettings(await storage.getImageSettings());
+      settings.image_settings = exposeImageSettings(await storage.getImageSettings());
     }
     if (payload.grade_rules !== undefined) {
       if (!storage.setGradeRules) throw new Error('当前数据存储方式暂不支持保存评分等级配置');

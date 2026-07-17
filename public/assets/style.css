@@ -1094,6 +1094,28 @@ button.disabled {
   .score-group-detail-row { display: table-row; }
 }
 
+
+.secret-input-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.secret-input-wrap input { min-width: 0; }
+.icon-btn.secret-toggle {
+  width: 44px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: #334155;
+  font-size: 18px;
+}
+.icon-btn.secret-toggle:hover {
+  background: #f8fafc;
+  border-color: #bfdbfe;
+}
+
 /* 图片存储页面配置 */
 .image-settings-form {
   display: grid;

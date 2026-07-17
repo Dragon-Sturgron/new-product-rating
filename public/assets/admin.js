@@ -487,6 +487,8 @@ function fillImageSettingsForm(settings = {}) {
   imageStorageForm.elements.s3_region.value = data.s3_region || 'us-east-1';
   imageStorageForm.elements.s3_access_key_id.value = data.s3_access_key_id || '';
   imageStorageForm.elements.s3_secret_access_key.value = data.s3_secret_access_key === '********' ? '' : data.s3_secret_access_key || '';
+  const secretToggle = imageStorageForm.querySelector('[data-target="s3_secret_access_key"]');
+  if (secretToggle) secretToggle.textContent = imageStorageForm.elements.s3_secret_access_key.type === 'text' ? '🙈' : '👁';
   imageStorageForm.elements.s3_force_path_style.checked = data.s3_force_path_style !== false;
   toggleImageSettingsFields();
 }
@@ -849,6 +851,15 @@ $$('.tab').forEach(tab => tab.addEventListener('click', () => setActiveTab(tab.d
 
 if (imageStorageForm) {
   imageStorageForm.elements.driver.addEventListener('change', toggleImageSettingsFields);
+  const secretToggleBtn = imageStorageForm.querySelector('[data-target="s3_secret_access_key"]');
+  if (secretToggleBtn) secretToggleBtn.addEventListener('click', () => {
+    const input = imageStorageForm.elements.s3_secret_access_key;
+    if (!input) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    secretToggleBtn.textContent = show ? '🙈' : '👁';
+    secretToggleBtn.title = show ? '隐藏 SecretKey' : '显示 SecretKey';
+  });
   if (imageStorageForm.elements.s3_provider) imageStorageForm.elements.s3_provider.addEventListener('change', () => applyS3ProviderPreset(imageStorageForm.elements.s3_provider.value));
   imageStorageForm.addEventListener('submit', async (event) => {
     event.preventDefault();

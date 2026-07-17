@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260717-style-delete-all-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260717-secret-eye-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -103,7 +103,12 @@ function adminHtml(adminPath, sessionIdleMinutes) {
               <label>Bucket / 空间名<input name="s3_bucket" placeholder="你的 Bucket 或七牛空间名" /></label>
               <label>Region / 区域<input name="s3_region" placeholder="例如 cn-east-1 / oss-cn-guangzhou" /></label>
               <label>AccessKey ID<input name="s3_access_key_id" autocomplete="off" /></label>
-              <label>SecretKey<input name="s3_secret_access_key" type="password" autocomplete="new-password" placeholder="留空表示不修改已有 SecretKey" /></label>
+              <label class="secret-key-label">SecretKey
+                <div class="secret-input-wrap">
+                  <input name="s3_secret_access_key" type="password" autocomplete="new-password" placeholder="留空表示不修改已有 SecretKey" />
+                  <button class="icon-btn secret-toggle" type="button" data-target="s3_secret_access_key" aria-label="显示或隐藏 SecretKey" title="显示/隐藏 SecretKey">👁</button>
+                </div>
+              </label>
               <label class="switch-label"><span>Path Style</span><input name="s3_force_path_style" type="checkbox" checked /></label>
             </div>
           </form>
@@ -245,7 +250,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260717-style-delete-all-v1" defer></script>
+  <script src="/assets/admin.js?v=20260717-secret-eye-v1" defer></script>
 </body>
 </html>`;
 }
