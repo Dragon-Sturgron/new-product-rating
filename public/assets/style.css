@@ -1370,3 +1370,121 @@ button.disabled {
 .name-rule-tip { margin-top: 6px; line-height: 1.6; color: #5b6b86; }
 
 .preview-note{display:block;margin-top:8px;color:#64748b;font-size:12px;text-align:center;}
+
+/* 美化确认弹框与款式导入 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(8px);
+  animation: modalFadeIn .14s ease-out;
+}
+.confirm-dialog {
+  width: min(520px, 100%);
+  max-height: min(84vh, 720px);
+  overflow: auto;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  padding: 22px;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 22px;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.25);
+  transform-origin: center;
+  animation: modalPopIn .16s ease-out;
+}
+.confirm-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  font-weight: 900;
+  font-size: 18px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.confirm-icon.danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.confirm-body h3 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.confirm-body p {
+  margin-top: 8px;
+  color: #475569;
+  line-height: 1.65;
+}
+.confirm-detail-list {
+  margin: 12px 0 0;
+  padding: 12px 14px 12px 32px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  line-height: 1.65;
+}
+.confirm-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+.danger-solid {
+  background: #dc2626;
+  color: #fff;
+}
+.danger-solid:hover { background: #b91c1c; }
+.import-preview-card {
+  margin-top: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+}
+.import-preview-title {
+  padding: 10px 12px;
+  font-weight: 800;
+  color: #334155;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+.import-preview-table-wrap {
+  max-height: 260px;
+  overflow: auto;
+}
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.import-preview-table th,
+.import-preview-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+}
+.import-preview-table th {
+  background: #f8fafc;
+  color: #475569;
+}
+.import-tip { padding: 0 12px 12px; }
+@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalPopIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 640px) {
+  .modal-backdrop { padding: 14px; place-items: end center; }
+  .confirm-dialog { grid-template-columns: 1fr; gap: 12px; padding: 18px; border-radius: 20px 20px 16px 16px; }
+  .confirm-icon { width: 44px; height: 44px; }
+  .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .confirm-actions button { width: 100%; }
+}

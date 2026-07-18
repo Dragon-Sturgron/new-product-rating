@@ -1,5 +1,5 @@
-console.info('[product-review] admin deferred image upload v3 loaded');
-console.info("product-review admin version: 20260718-display-url-normalize-v1");
+console.info('[product-review] admin style import + custom dialogs v1 loaded');
+console.info("product-review admin version: 20260718-style-import-dialogs-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -37,6 +37,15 @@ const saveGradeRulesBtn = $('#saveGradeRulesBtn');
 const styleDropZone = $('#styleDropZone');
 const styleImageFile = $('#styleImageFile');
 const stylePreview = $('#stylePreview');
+const STYLE_IMPORT_ACCEPT = '.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const XLSX_CDN_URLS = [
+  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+];
+let styleImportFileInput = null;
+let xlsxLoaderPromise = null;
 
 let styles = [];
 let scores = [];
@@ -84,6 +93,72 @@ document.addEventListener('click', (event) => {
   const control = event.target.closest('button, a.ghost');
   instantButtonFeedback(control);
 }, { passive: true });
+
+
+function ensureDialogHost() {
+  let host = document.getElementById('dialogHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'dialogHost';
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function showConfirmDialog(options = {}) {
+  const {
+    title = '请确认操作',
+    message = '',
+    details = [],
+    contentHtml = '',
+    confirmText = '确认',
+    cancelText = '取消',
+    danger = true,
+    icon = '!' 
+  } = options;
+  return new Promise(resolve => {
+    const host = ensureDialogHost();
+    const detailList = Array.isArray(details) && details.length
+      ? `<ul class="confirm-detail-list">${details.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+      : '';
+    host.innerHTML = `
+      <div class="modal-backdrop" data-dialog-backdrop>
+        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle">
+          <div class="confirm-icon ${danger ? 'danger' : 'info'}">${escapeHtml(icon)}</div>
+          <div class="confirm-body">
+            <h3 id="confirmDialogTitle">${escapeHtml(title)}</h3>
+            ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+            ${detailList}
+            ${contentHtml || ''}
+          </div>
+          <div class="confirm-actions">
+            <button class="ghost" type="button" data-dialog-cancel>${escapeHtml(cancelText)}</button>
+            <button class="${danger ? 'danger-solid' : 'primary'}" type="button" data-dialog-confirm>${escapeHtml(confirmText)}</button>
+          </div>
+        </div>
+      </div>`;
+
+    const backdrop = host.querySelector('[data-dialog-backdrop]');
+    const confirmBtn = host.querySelector('[data-dialog-confirm]');
+    const cancelBtn = host.querySelector('[data-dialog-cancel]');
+    const close = (value) => {
+      document.removeEventListener('keydown', onKeyDown);
+      host.innerHTML = '';
+      resolve(value);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') close(false);
+      if (event.key === 'Enter' && document.activeElement !== cancelBtn) close(true);
+    };
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close(false);
+    });
+    cancelBtn.addEventListener('click', () => close(false));
+    confirmBtn.addEventListener('click', () => close(true));
+    document.addEventListener('keydown', onKeyDown);
+    window.setTimeout(() => confirmBtn.focus(), 20);
+  });
+}
 
 const defaultScoreTypes = [
   { id: 'main', label: '综合评分' },
@@ -885,6 +960,201 @@ async function loadStyles() {
   styles = data.styles || [];
   renderStyles();
 }
+
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = Array.from(document.scripts).find(script => script.src === src);
+    if (existing && existing.dataset.loaded === 'true') { resolve(); return; }
+    const script = existing || document.createElement('script');
+    let done = false;
+    const timer = window.setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(new Error('加载超时'));
+    }, 12000);
+    script.onload = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      script.dataset.loaded = 'true';
+      resolve();
+    };
+    script.onerror = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      reject(new Error('加载失败'));
+    };
+    if (!existing) {
+      script.src = src;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      document.head.appendChild(script);
+    }
+  });
+}
+
+async function ensureXlsxParser() {
+  if (window.XLSX?.read) return window.XLSX;
+  if (!xlsxLoaderPromise) {
+    xlsxLoaderPromise = (async () => {
+      for (const src of XLSX_CDN_URLS) {
+        try {
+          await loadScript(src);
+          if (window.XLSX?.read) return window.XLSX;
+        } catch (_) {}
+      }
+      throw new Error('Excel 解析库加载失败，请检查网络后重试。');
+    })();
+  }
+  return xlsxLoaderPromise;
+}
+
+function normalizeImportHeader(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s_\-:：/\()（）【】\[\]]+/g, '');
+}
+
+function findImportColumns(rows) {
+  const aliases = {
+    style_code: ['款式编码', '款号', '款式编号', '编码', 'stylecode', 'style_code', 'sku', '货号'],
+    season: ['季节', '季度', 'season'],
+    base_price: ['基本售价', '售价', '价格', '吊牌价', '零售价', 'baseprice', 'base_price', 'price']
+  };
+  const normalizedAliases = Object.fromEntries(Object.entries(aliases).map(([key, list]) => [key, new Set(list.map(normalizeImportHeader))]));
+  const maxHeaderRows = Math.min(rows.length, 20);
+  for (let rowIndex = 0; rowIndex < maxHeaderRows; rowIndex += 1) {
+    const row = rows[rowIndex] || [];
+    const columns = {};
+    row.forEach((cell, colIndex) => {
+      const header = normalizeImportHeader(cell);
+      if (!header) return;
+      for (const [key, set] of Object.entries(normalizedAliases)) {
+        if (set.has(header) && columns[key] === undefined) columns[key] = colIndex;
+      }
+    });
+    if (columns.style_code !== undefined) return { rowIndex, columns };
+  }
+  throw new Error('没有找到“款式编码”表头，请确认 Excel 第一行包含：款式编码、季节、基本售价。');
+}
+
+function cellToText(value) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).trim();
+}
+
+function normalizeImportPrice(value) {
+  const text = cellToText(value).replace(/[￥¥,，\s]/g, '');
+  if (!text) return '';
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  return match ? match[0] : '';
+}
+
+async function parseStyleExcelFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  if (!/\.(xlsx|xls)$/.test(name)) throw new Error('请选择 .xls 或 .xlsx 格式文件');
+  const XLSX = await ensureXlsxParser();
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const firstSheetName = workbook.SheetNames?.[0];
+  if (!firstSheetName) throw new Error('Excel 文件里没有工作表');
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { header: 1, defval: '', raw: false });
+  const { rowIndex, columns } = findImportColumns(rows);
+  const resultMap = new Map();
+  let skippedBlank = 0;
+  for (let i = rowIndex + 1; i < rows.length; i += 1) {
+    const row = rows[i] || [];
+    const styleCode = cellToText(row[columns.style_code]);
+    if (!styleCode) { skippedBlank += 1; continue; }
+    const item = {
+      style_code: styleCode,
+      season: columns.season === undefined ? '' : cellToText(row[columns.season]),
+      base_price: columns.base_price === undefined ? '' : normalizeImportPrice(row[columns.base_price])
+    };
+    resultMap.set(styleCode.toLowerCase(), item);
+  }
+  const records = Array.from(resultMap.values());
+  if (!records.length) throw new Error('Excel 中没有可导入的款式数据');
+  return { records, skippedBlank, sheetName: firstSheetName };
+}
+
+function buildImportPreviewHtml(records) {
+  const previewRows = records.slice(0, 8).map(item => `
+    <tr>
+      <td>${escapeHtml(item.style_code)}</td>
+      <td>${escapeHtml(item.season || '-')}</td>
+      <td>${escapeHtml(item.base_price || '-')}</td>
+    </tr>`).join('');
+  const more = records.length > 8 ? `<p class="tip import-tip">仅预览前 8 条，其余 ${records.length - 8} 条会一起导入。</p>` : '';
+  return `<div class="import-preview-card">
+    <div class="import-preview-title">导入预览</div>
+    <div class="import-preview-table-wrap">
+      <table class="import-preview-table">
+        <thead><tr><th>款式编码</th><th>季节</th><th>基本售价</th></tr></thead>
+        <tbody>${previewRows}</tbody>
+      </table>
+    </div>
+    ${more}
+  </div>`;
+}
+
+async function handleStyleImportFile(file) {
+  const importBtn = document.getElementById('styleImportBtn');
+  setButtonBusy(importBtn, true, '读取中...');
+  try {
+    const parsed = await parseStyleExcelFile(file);
+    const confirmed = await showConfirmDialog({
+      title: '导入已配置款式？',
+      message: `已从“${parsed.sheetName}”识别到 ${parsed.records.length} 个款式。`,
+      details: [
+        '同款式编码已存在时，将更新“季节”和“基本售价”，并保留原来的图片、备注和启用状态。',
+        '新款式会默认启用评分，产品图先留空，后续可以逐个补图。',
+        '导入不会删除当前已有款式。'
+      ],
+      contentHtml: buildImportPreviewHtml(parsed.records),
+      confirmText: '确认导入',
+      cancelText: '先不导入',
+      danger: false,
+      icon: '导'
+    });
+    if (!confirmed) return;
+    setButtonBusy(importBtn, true, '导入中...');
+    const data = await requestJson('/api/styles/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ styles: parsed.records })
+    });
+    showMessage(`导入完成：新增 ${data.created_count || 0} 个，更新 ${data.updated_count || 0} 个，跳过 ${data.skipped_count || 0} 个。`);
+    await loadStyles();
+  } catch (e) {
+    showMessage(e.message || '导入失败', 'error');
+  } finally {
+    setButtonBusy(importBtn, false);
+  }
+}
+
+function ensureStyleImportControls() {
+  if (!deleteAllStylesBtn || document.getElementById('styleImportBtn')) return;
+  const importBtn = document.createElement('button');
+  importBtn.id = 'styleImportBtn';
+  importBtn.className = 'primary-light';
+  importBtn.type = 'button';
+  importBtn.textContent = '导入款式';
+  styleImportFileInput = document.createElement('input');
+  styleImportFileInput.type = 'file';
+  styleImportFileInput.accept = STYLE_IMPORT_ACCEPT;
+  styleImportFileInput.className = 'visually-hidden';
+  styleImportFileInput.id = 'styleImportFileInput';
+  deleteAllStylesBtn.insertAdjacentElement('beforebegin', importBtn);
+  deleteAllStylesBtn.insertAdjacentElement('beforebegin', styleImportFileInput);
+  importBtn.addEventListener('click', () => styleImportFileInput.click());
+  styleImportFileInput.addEventListener('change', async () => {
+    const file = styleImportFileInput.files?.[0];
+    styleImportFileInput.value = '';
+    if (file) await handleStyleImportFile(file);
+  });
+}
 async function loadScores() {
   const params = new URLSearchParams(new FormData(scoreSearchForm));
   const data = await requestJson(`/api/scores?${params}`);
@@ -1189,6 +1459,8 @@ $('#clearStyleSearchBtn').addEventListener('click', async (event) => {
   try { await loadStyles(); } finally { setButtonBusy(event.currentTarget, false); }
 });
 
+ensureStyleImportControls();
+
 if (deleteAllStylesBtn) {
   deleteAllStylesBtn.addEventListener('click', async (event) => {
     if (!styles.length) {
@@ -1196,9 +1468,16 @@ if (deleteAllStylesBtn) {
       return;
     }
     const count = styles.length;
-    if (!confirm(`确定删除当前查询结果中的全部已配置款式吗？
-
-本次将删除 ${count} 个款式。删除后不可恢复，前端评分页也不会再显示这些款式。`)) return;
+    const confirmed = await showConfirmDialog({
+      title: '删除全部已配置款式？',
+      message: '确定删除当前查询结果中的全部已配置款式吗？',
+      details: [`本次将删除 ${count} 个款式。`, '删除后不可恢复，前端评分页也不会再显示这些款式。', '对应的七牛云/OSS 图片也会尝试同步清理。'],
+      confirmText: '确认全部删除',
+      cancelText: '取消',
+      danger: true,
+      icon: '删'
+    });
+    if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
       const params = new URLSearchParams(new FormData(styleSearchForm));
@@ -1259,7 +1538,16 @@ stylesBody.addEventListener('click', async (event) => {
     return;
   }
   if (action === 'delete') {
-    if (!confirm(`确定删除款式 ${style.style_code} 吗？已产生的评分记录不会删除。`)) return;
+    const confirmed = await showConfirmDialog({
+      title: '删除这个款式？',
+      message: `确定删除款式 ${style.style_code} 吗？`,
+      details: ['已产生的评分记录不会删除。', '如果该款式绑定了系统上传的七牛云/OSS 图片，也会尝试同步删除。'],
+      confirmText: '确认删除',
+      cancelText: '取消',
+      danger: true,
+      icon: '删'
+    });
+    if (!confirmed) return;
     try { await requestJson(`/api/styles/${encodeURIComponent(style.id)}`, { method: 'DELETE' }); showMessage('款式已删除'); inlineEditingStyleId = null; await loadStyles(); } catch(e) { showMessage(e.message, 'error'); }
   }
 });
@@ -1299,7 +1587,16 @@ if (deleteAllScoresBtn) {
     }
     const groupCount = scoreGroups.length || buildScoreGroups(scores).length;
     const scoreCount = scores.length;
-    if (!confirm(`确定删除当前查询结果中的全部评分结果吗？\n\n本次将删除 ${groupCount} 次提交、共 ${scoreCount} 款评分记录。删除后不可恢复。`)) return;
+    const confirmed = await showConfirmDialog({
+      title: '删除全部评分结果？',
+      message: '确定删除当前查询结果中的全部评分结果吗？',
+      details: [`本次将删除 ${groupCount} 次提交、共 ${scoreCount} 款评分记录。`, '删除后不可恢复。'],
+      confirmText: '确认全部删除',
+      cancelText: '取消',
+      danger: true,
+      icon: '删'
+    });
+    if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
       const params = new URLSearchParams(new FormData(scoreSearchForm));
@@ -1332,7 +1629,16 @@ scoresBody.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
-      if (!confirm(`确定删除 ${group.reviewer} 在 ${group.submitted_at || '-'} 提交的 ${group.scores.length} 款评分结果吗？删除后不可恢复。`)) return;
+      const confirmed = await showConfirmDialog({
+        title: '删除这次提交？',
+        message: `确定删除 ${group.reviewer} 在 ${group.submitted_at || '-'} 提交的评分结果吗？`,
+        details: [`本次提交包含 ${group.scores.length} 款评分记录。`, '删除后不可恢复。'],
+        confirmText: '确认删除',
+        cancelText: '取消',
+        danger: true,
+        icon: '删'
+      });
+      if (!confirmed) return;
       setButtonBusy(groupBtn, true, '删除中...');
       try {
         await Promise.all(group.scores.map(score => requestJson(`/api/scores/${encodeURIComponent(score.id)}`, { method: 'DELETE' })));
