@@ -855,6 +855,12 @@ button.disabled {
   transform: translateY(-1px);
 }
 
+.drop-zone.paste-success {
+  border-color: #16a34a;
+  background: linear-gradient(135deg, #dcfce7, #ffffff);
+  box-shadow: 0 12px 28px rgba(22, 163, 74, .16);
+}
+
 .drop-preview {
   min-height: 138px;
   display: grid;

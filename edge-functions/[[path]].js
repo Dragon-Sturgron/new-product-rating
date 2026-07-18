@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260718-style-import-dialogs-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260718-paste-image-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -168,11 +168,11 @@ function adminHtml(adminPath, sessionIdleMinutes) {
           <label class="wide image-field">产品图 <span class="required">*</span>
             <input name="product_image" type="hidden" />
             <input class="visually-hidden" id="styleImageFile" name="image_file" type="file" accept="image/*" />
-            <div id="styleDropZone" class="drop-zone" tabindex="0" role="button" aria-label="拖拽或点击上传产品图">
-              <div id="stylePreview" class="drop-preview"><span>拖拽图片到这里，或点击选择图片</span></div>
+            <div id="styleDropZone" class="drop-zone" tabindex="0" role="button" aria-label="拖拽、点击或粘贴上传产品图">
+              <div id="stylePreview" class="drop-preview"><span>拖拽图片到这里、点击选择，或复制图片后按 Ctrl+V 粘贴</span></div>
               <div class="drop-text">
-                <strong>拖拽上传产品图</strong>
-                <span>支持手机点击选择图片；图片会上传到 R2/S3/OSS，数据库只保存图片地址。</span>
+                <strong>上传产品图</strong>
+                <span>支持点击选择、拖拽、复制图片后 Ctrl+V 粘贴；先本地预览，点击保存款式后才上传到 R2/S3/OSS。</span>
               </div>
             </div>
             <details class="url-details">
@@ -251,7 +251,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260718-style-import-dialogs-v1" defer></script>
+  <script src="/assets/admin.js?v=20260718-paste-image-v1" defer></script>
 </body>
 </html>`;
 }
