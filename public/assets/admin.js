@@ -1,3 +1,4 @@
+console.info('[product-review] admin deferred image upload v2 loaded');
 console.info("product-review admin version: 20260717-style-delete-all-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));

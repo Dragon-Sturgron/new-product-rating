@@ -91,3 +91,9 @@ https://xianglu.dragon-sturgeon.cn/xianglupiju/review-images-xxx.png
 - “已配置款式 → 全部删除”会批量删除款式，并批量尝试删除对应产品图。
 - 为了防止误删，只会删除能从当前图片存储配置中识别出来、且符合当前文件名前缀的图片；手动粘贴的外部图片链接不会被删除。
 - 如果 OSS 删除失败，款式删除/更新仍然会完成，接口会返回 image_delete / image_delete_results 便于排查。
+
+
+## 2026-07-18 deferred upload cache fix
+
+本版确认：选择/拖拽图片只生成浏览器本地预览，不会请求 `/api/upload-image`；只有点击「保存款式」或行内「保存」时才会真正上传到 OSS。
+同时更新静态资源版本号为 `20260718-deferred-upload-v2`，避免 EdgeOne/浏览器继续加载旧的 admin.js。
