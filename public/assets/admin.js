@@ -702,12 +702,26 @@ function updateInlineLocalImagePreview(row, file) {
   if (previous) { try { URL.revokeObjectURL(previous); } catch {} }
   const localUrl = URL.createObjectURL(file);
   row.dataset.localPreviewUrl = localUrl;
+  pendingInlineImageFiles.set(row.dataset.styleEditId, file);
   updateInlineImagePreview(row, localUrl, { updateInput: false });
 }
-function clearInlineLocalImagePreview(row) {
+function clearInlineLocalImagePreview(row, options = {}) {
   const previous = row?.dataset?.localPreviewUrl;
   if (previous) { try { URL.revokeObjectURL(previous); } catch {} }
-  if (row) delete row.dataset.localPreviewUrl;
+  if (row) {
+    delete row.dataset.localPreviewUrl;
+    if (options.clearPending !== false) pendingInlineImageFiles.delete(row.dataset.styleEditId);
+  }
+}
+async function commitPendingInlineImageIfNeeded(row) {
+  const id = row?.dataset?.styleEditId;
+  const file = id ? pendingInlineImageFiles.get(id) : null;
+  if (!file) return '';
+  const url = await uploadImageFile(file);
+  pendingInlineImageFiles.delete(id);
+  clearInlineLocalImagePreview(row, { clearPending: false });
+  updateInlineImagePreview(row, url);
+  return url;
 }
 function renderStyles() {
   renderStats();
@@ -791,6 +805,8 @@ async function loadScores() {
   renderScores();
 }
 let stylePreviewLocalObjectUrl = '';
+let pendingStyleImageFile = null;
+const pendingInlineImageFiles = new Map();
 function clearStyleLocalPreviewUrl() {
   if (stylePreviewLocalObjectUrl) {
     try { URL.revokeObjectURL(stylePreviewLocalObjectUrl); } catch {}
@@ -803,8 +819,9 @@ function renderStylePreviewImage(url, note = '') {
     ? `<img class="image-preview" src="${escapeHtml(safe)}" alt="产品图预览" loading="lazy" referrerpolicy="no-referrer" />${note ? `<small class="preview-note">${escapeHtml(note)}</small>` : ''}`
     : '<span>拖拽图片到这里，或点击选择图片</span>';
 }
-function setImagePreview(url) {
+function setImagePreview(url, options = {}) {
   clearStyleLocalPreviewUrl();
+  if (!options.keepPending) pendingStyleImageFile = null;
   const safe = String(url || '').trim();
   styleForm.elements.product_image.value = safe;
   if (styleForm.elements.product_image_url) styleForm.elements.product_image_url.value = safe;
@@ -812,9 +829,10 @@ function setImagePreview(url) {
 }
 function setLocalImagePreview(file) {
   clearStyleLocalPreviewUrl();
+  pendingStyleImageFile = file || null;
   if (!file) return;
   stylePreviewLocalObjectUrl = URL.createObjectURL(file);
-  renderStylePreviewImage(stylePreviewLocalObjectUrl, '本地预览，上传成功后才会正式保存');
+  renderStylePreviewImage(stylePreviewLocalObjectUrl, '本地预览：点击保存款式后才会上传，取消/换图前不会写入七牛云');
 }
 function resetStyleForm() {
   editingStyleId = null;
@@ -822,6 +840,7 @@ function resetStyleForm() {
   styleForm.elements.active.checked = true;
   styleFormTitle.textContent = '新增评分款式';
   cancelStyleEditBtn.classList.add('hidden');
+  pendingStyleImageFile = null;
   setImagePreview('');
 }
 function fillStyleForm(style) {
@@ -1006,8 +1025,15 @@ saveScoreFieldsBtn.addEventListener('click', async () => {
 });
 
 async function uploadAndSetPreview(file) {
+  // 只做本地预览并暂存文件，不立即上传到七牛云/OSS。
+  if (!file || !file.type.startsWith('image/')) throw new Error('请选择图片文件');
   setLocalImagePreview(file);
-  const url = await uploadImageFile(file);
+  return '';
+}
+async function commitPendingStyleImageIfNeeded() {
+  if (!pendingStyleImageFile) return styleForm.elements.product_image.value.trim() || styleForm.elements.product_image_url.value.trim();
+  const url = await uploadImageFile(pendingStyleImageFile);
+  pendingStyleImageFile = null;
   if (url) setImagePreview(url);
   return url;
 }
@@ -1026,25 +1052,24 @@ styleDropZone.addEventListener('keydown', (event) => {
 styleDropZone.addEventListener('drop', async (event) => {
   const file = event.dataTransfer?.files?.[0];
   if (!file) return;
-  try { await uploadAndSetPreview(file); showMessage('图片已上传'); } catch(e) { showMessage(e.message, 'error'); }
+  try { await uploadAndSetPreview(file); showMessage('图片已选择，本地预览中；点击保存款式后才会上传'); } catch(e) { showMessage(e.message, 'error'); }
 });
 styleImageFile.addEventListener('change', async () => {
   const file = styleImageFile.files?.[0];
   if (!file) return;
-  try { await uploadAndSetPreview(file); showMessage('图片已上传'); } catch(e) { showMessage(e.message, 'error'); }
+  try { await uploadAndSetPreview(file); showMessage('图片已选择，本地预览中；点击保存款式后才会上传'); } catch(e) { showMessage(e.message, 'error'); }
   finally { styleImageFile.value = ''; }
 });
-styleForm.elements.product_image_url.addEventListener('input', () => setImagePreview(styleForm.elements.product_image_url.value.trim()));
+styleForm.elements.product_image_url.addEventListener('input', () => { pendingStyleImageFile = null; setImagePreview(styleForm.elements.product_image_url.value.trim()); });
 
 styleForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const submitBtn = styleForm.querySelector('button[type="submit"]');
   setButtonBusy(submitBtn, true, editingStyleId ? '更新中...' : '保存中...');
   try {
-    const file = styleImageFile.files?.[0];
-    if (file) await uploadAndSetPreview(file);
+    const committedImageUrl = await commitPendingStyleImageIfNeeded();
     const payload = {
-      product_image: styleForm.elements.product_image.value.trim() || styleForm.elements.product_image_url.value.trim(),
+      product_image: committedImageUrl || styleForm.elements.product_image.value.trim() || styleForm.elements.product_image_url.value.trim(),
       style_code: styleForm.elements.style_code.value.trim(),
       season: styleForm.elements.season.value.trim(),
       base_price: styleForm.elements.base_price.value,
@@ -1114,6 +1139,9 @@ stylesBody.addEventListener('click', async (event) => {
     return;
   }
   if (action === 'cancel-edit') {
+    const row = btn.closest('[data-style-edit-id]');
+    if (row) clearInlineLocalImagePreview(row);
+    pendingInlineImageFiles.delete(String(style.id));
     inlineEditingStyleId = null;
     renderStyles();
     return;
@@ -1128,6 +1156,7 @@ stylesBody.addEventListener('click', async (event) => {
     if (!row) return;
     setButtonBusy(btn, true, '保存中...');
     try {
+      await commitPendingInlineImageIfNeeded(row);
       const payload = readInlineStylePayload(row);
       await requestJson(`/api/styles/${encodeURIComponent(style.id)}`, {
         method: 'PUT',
@@ -1153,19 +1182,17 @@ stylesBody.addEventListener('change', async (event) => {
   const file = fileInput.files?.[0];
   if (!row || !file) return;
   try {
+    if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
     updateInlineLocalImagePreview(row, file);
-    const url = await uploadImageFile(file);
-    clearInlineLocalImagePreview(row);
-    updateInlineImagePreview(row, url);
-    showMessage('图片已上传，点击保存后生效');
-  } catch(e) { showMessage(`本地图片已预览，但上传失败：${e.message}`, 'error'); }
+    showMessage('图片已选择，本地预览中；点击保存后才会上传并替换旧图');
+  } catch(e) { showMessage(e.message, 'error'); }
   finally { fileInput.value = ''; }
 });
 stylesBody.addEventListener('input', (event) => {
   const imageInput = event.target.closest('[data-inline-field="product_image"]');
   if (!imageInput) return;
   const row = imageInput.closest('[data-style-edit-id]');
-  if (row) updateInlineImagePreview(row, imageInput.value.trim());
+  if (row) { clearInlineLocalImagePreview(row); updateInlineImagePreview(row, imageInput.value.trim()); }
 });
 
 scoreSearchForm.addEventListener('submit', async (event) => {
