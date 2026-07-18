@@ -95,6 +95,121 @@ function publicDisplayUrl(rawUrl) {
   return value;
 }
 
+
+function stripImageProxyUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw, 'https://local.invalid');
+    if (url.pathname === '/api/public/image-proxy') {
+      const target = url.searchParams.get('url') || '';
+      return target ? decodeURIComponent(target) : '';
+    }
+  } catch (_) {}
+  return raw;
+}
+
+function urlsEqualBase(rawUrl, baseUrl) {
+  try {
+    const url = new URL(rawUrl);
+    const base = new URL(baseUrl);
+    const urlPath = url.pathname.replace(/\/+$/, '');
+    const basePath = base.pathname.replace(/\/+$/, '');
+    return url.origin === base.origin && (basePath === '' || urlPath === basePath || urlPath.startsWith(`${basePath}/`));
+  } catch (_) {
+    return false;
+  }
+}
+
+function removeLeadingPath(pathname, prefix) {
+  const path = String(pathname || '').replace(/^\/+/, '');
+  const cleanPrefix = cleanPathPrefix(prefix);
+  if (!cleanPrefix) return path;
+  if (path === cleanPrefix) return '';
+  if (path.startsWith(`${cleanPrefix}/`)) return path.slice(cleanPrefix.length + 1);
+  return path;
+}
+
+function decodeKeyPath(pathname) {
+  return String(pathname || '')
+    .split('/')
+    .filter(Boolean)
+    .map(part => {
+      try { return decodeURIComponent(part); } catch { return part; }
+    })
+    .join('/');
+}
+
+function objectKeyFromPublicUrl(imageUrl, config = {}) {
+  const input = stripImageProxyUrl(imageUrl);
+  if (!input || !/^https?:\/\//i.test(input)) return '';
+  let url;
+  try { url = new URL(input); } catch { return ''; }
+
+  const publicBase = withTrailingSlash(config.public_image_base_url);
+  if (publicBase && urlsEqualBase(input, publicBase)) {
+    const base = new URL(publicBase);
+    let relativePath = url.pathname;
+    const basePath = base.pathname.replace(/\/+$/, '');
+    if (basePath && relativePath.startsWith(basePath)) relativePath = relativePath.slice(basePath.length);
+    relativePath = removeLeadingPath(relativePath, config.public_image_path_prefix);
+    const key = decodeKeyPath(relativePath);
+    return key && !key.includes('..') ? key : '';
+  }
+
+  // 兼容保存成 S3 Endpoint 访问地址的旧数据。
+  const endpoint = withTrailingSlash(config.s3_endpoint);
+  const bucket = String(config.s3_bucket || '').trim();
+  if (endpoint && bucket) {
+    try {
+      const ep = new URL(endpoint);
+      if (url.hostname === ep.hostname) {
+        let relativePath = url.pathname.replace(/^\/+/, '');
+        if (relativePath === bucket) return '';
+        if (relativePath.startsWith(`${bucket}/`)) relativePath = relativePath.slice(bucket.length + 1);
+        const key = decodeKeyPath(relativePath);
+        return key && !key.includes('..') ? key : '';
+      }
+      if (url.hostname === `${bucket}.${ep.hostname}`) {
+        const key = decodeKeyPath(url.pathname);
+        return key && !key.includes('..') ? key : '';
+      }
+    } catch (_) {}
+  }
+  return '';
+}
+
+function looksManagedImageKey(key, config = {}) {
+  const value = String(key || '').trim();
+  if (!value || value.includes('..')) return false;
+  const prefix = String(config.image_key_prefix || '').trim();
+  if (!prefix) return true;
+  return value === prefix || value.startsWith(`${prefix}-`) || value.startsWith(`${prefix}/`);
+}
+
+async function safeDeleteManagedImage(env, config, imageUrl) {
+  const driver = normalizeImageDriver(config);
+  const key = objectKeyFromPublicUrl(imageUrl, config);
+  if (!key || !looksManagedImageKey(key, config)) return { deleted: false, skipped: true, key: key || '' };
+  if (driver === 'r2') return deleteFromR2(env, key);
+  if (driver === 's3') return deleteFromS3(config, key);
+  return { deleted: false, skipped: true, key };
+}
+
+export async function deleteImageByUrl(env, imageUrl) {
+  if (!imageUrl) return { deleted: false, skipped: true };
+  const config = await resolveImageSettings(env);
+  return safeDeleteManagedImage(env, config, imageUrl);
+}
+
+export async function tryDeleteImageByUrl(env, imageUrl) {
+  try {
+    return await deleteImageByUrl(env, imageUrl);
+  } catch (error) {
+    return { deleted: false, skipped: false, error: error?.message || '删除图片失败' };
+  }
+}
+
 export async function uploadImageFromRequest(request, env) {
   const config = await resolveImageSettings(env);
   const driver = normalizeImageDriver(config);
@@ -169,6 +284,37 @@ async function uploadToS3(config, key, bytes, contentType) {
   return { key, url: publicDisplayUrl(publicUrl), raw_url: publicUrl, storage: 's3' };
 }
 
+
+async function deleteFromR2(env, key) {
+  const bucket = env.IMAGE_BUCKET || env.R2_BUCKET;
+  if (!bucket || typeof bucket.delete !== 'function') {
+    throw jsonError('当前使用 R2 图片存储，但未绑定可删除的 R2 bucket。', 500);
+  }
+  await bucket.delete(key);
+  return { deleted: true, key, storage: 'r2' };
+}
+
+async function deleteFromS3(config, key) {
+  const endpoint = withTrailingSlash(config.s3_endpoint);
+  const bucket = String(config.s3_bucket || '').trim();
+  const region = String(config.s3_region || 'us-east-1').trim() || 'us-east-1';
+  const accessKeyId = String(config.s3_access_key_id || '').trim();
+  const secretAccessKey = String(config.s3_secret_access_key || '').trim();
+  const forcePathStyle = config.s3_force_path_style !== false;
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    throw jsonError('当前使用 S3/OSS 图片存储，但页面配置里缺少 Endpoint、Bucket、AccessKey 或 SecretKey，无法删除图片。', 500);
+  }
+  const url = buildS3ObjectUrl(endpoint, bucket, key, forcePathStyle);
+  const signed = await signS3Request({ method: 'DELETE', url, region, service: 's3', accessKeyId, secretAccessKey, body: '' });
+  const response = await fetch(url.toString(), { method: 'DELETE', headers: signed.headers });
+  // 七牛/部分 S3 兼容服务删除不存在对象也可能返回 404；对于清理旧图来说可视为已清理。
+  if (![200, 202, 204, 404].includes(response.status)) {
+    const text = await response.text().catch(() => '');
+    throw jsonError(`删除 OSS 图片失败：${response.status} ${text.slice(0, 200)}`, 502);
+  }
+  return { deleted: response.status !== 404, key, storage: 's3' };
+}
+
 function buildS3ObjectUrl(endpoint, bucket, key, forcePathStyle) {
   const base = new URL(endpoint);
   const encodedKey = key.split('/').map(encodeURIComponent).join('/');
@@ -211,16 +357,16 @@ function canonicalUri(pathname) {
   return pathname.split('/').map(part => encodeURIComponent(decodeURIComponent(part)).replace(/%2F/g, '/')).join('/');
 }
 
-async function signS3Request({ method, url, region, service, accessKeyId, secretAccessKey, body, contentType }) {
+async function signS3Request({ method, url, region, service, accessKeyId, secretAccessKey, body = '', contentType = '' }) {
   const { amzDate, dateStamp } = amzDates();
-  const payloadHash = hex(await sha256(body));
+  const payloadHash = hex(await sha256(body || ''));
   const host = url.host;
   const headers = {
     host,
-    'content-type': contentType,
     'x-amz-content-sha256': payloadHash,
     'x-amz-date': amzDate
   };
+  if (contentType) headers['content-type'] = contentType;
 
   const canonicalHeaders = Object.entries(headers)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -248,14 +394,13 @@ async function signS3Request({ method, url, region, service, accessKeyId, secret
   const signature = hex(await hmac(signingKey, stringToSign));
   const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-  return {
-    headers: {
-      'content-type': contentType,
-      'x-amz-content-sha256': payloadHash,
-      'x-amz-date': amzDate,
-      authorization
-    }
+  const outputHeaders = {
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+    authorization
   };
+  if (contentType) outputHeaders['content-type'] = contentType;
+  return { headers: outputHeaders };
 }
 
 export async function getImageObject(env, key) {
