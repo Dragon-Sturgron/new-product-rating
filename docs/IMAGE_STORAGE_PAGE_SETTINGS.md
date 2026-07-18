@@ -61,3 +61,32 @@ Path Style
 ## 安全说明
 
 为了减少 Cloudflare 环境变量，S3 SecretKey 会保存到当前系统的数据存储里，例如 D1 的 `app_settings` 表。后台 API 不会把 SecretKey 明文返回到页面，编辑时留空表示不修改已有 SecretKey。
+
+
+### 七牛云公开访问路径前缀
+
+如果七牛云实际图片地址类似：
+
+```text
+http://ti9dkt322.hn-bkt.clouddn.com/xianglupiju/review-images-xxx.png
+```
+
+后台“图片公开访问域名 / CDN域名”填写自定义域名，例如：
+
+```text
+https://xianglu.dragon-sturgeon.cn
+```
+
+同时“公开访问路径前缀”填写：
+
+```text
+xianglupiju
+```
+
+系统最终会拼接为：
+
+```text
+https://xianglu.dragon-sturgeon.cn/xianglupiju/review-images-xxx.png
+```
+
+如果你的自定义 CDN 域名已经直接绑定到空间根路径，不需要 `/xianglupiju`，则路径前缀留空。

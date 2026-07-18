@@ -437,6 +437,7 @@ function normalizeImageSettingsLocal(settings = {}) {
     image_max_size_mb: Number(settings.image_max_size_mb || 10),
     image_key_prefix: String(settings.image_key_prefix || 'review-images').trim() || 'review-images',
     public_image_base_url: String(settings.public_image_base_url || '').trim(),
+    public_image_path_prefix: String(settings.public_image_path_prefix || '').trim(),
     s3_endpoint: String(settings.s3_endpoint || '').trim(),
     s3_bucket: String(settings.s3_bucket || '').trim(),
     s3_region: String(settings.s3_region || 'us-east-1').trim() || 'us-east-1',
@@ -490,6 +491,7 @@ function fillImageSettingsForm(settings = {}) {
   imageStorageForm.elements.image_max_size_mb.value = data.image_max_size_mb || 10;
   imageStorageForm.elements.image_key_prefix.value = data.image_key_prefix || 'review-images';
   imageStorageForm.elements.public_image_base_url.value = data.public_image_base_url || '';
+  if (imageStorageForm.elements.public_image_path_prefix) imageStorageForm.elements.public_image_path_prefix.value = data.public_image_path_prefix || '';
   imageStorageForm.elements.s3_endpoint.value = data.s3_endpoint || '';
   imageStorageForm.elements.s3_bucket.value = data.s3_bucket || '';
   imageStorageForm.elements.s3_region.value = data.s3_region || 'us-east-1';
@@ -508,6 +510,7 @@ function readImageSettingsForm() {
     image_max_size_mb: form.elements.image_max_size_mb.value,
     image_key_prefix: form.elements.image_key_prefix.value.trim(),
     public_image_base_url: form.elements.public_image_base_url.value.trim(),
+    public_image_path_prefix: form.elements.public_image_path_prefix ? form.elements.public_image_path_prefix.value.trim().replace(/^\/+|\/+$/g, '') : '',
     s3_endpoint: form.elements.s3_endpoint.value.trim(),
     s3_bucket: form.elements.s3_bucket.value.trim(),
     s3_region: form.elements.s3_region.value.trim(),

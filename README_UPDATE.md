@@ -54,3 +54,32 @@ KV 绑定仍保持：
 - 删除范围为当前查询条件下的款式；没有筛选条件时删除全部已配置款式。
 - 删除后不可恢复，前端评分页不会再显示被删除款式。
 - 评分结果的全部删除功能保持不变。
+
+
+### 七牛云公开访问路径前缀
+
+如果七牛云实际图片地址类似：
+
+```text
+http://ti9dkt322.hn-bkt.clouddn.com/xianglupiju/review-images-xxx.png
+```
+
+后台“图片公开访问域名 / CDN域名”填写自定义域名，例如：
+
+```text
+https://xianglu.dragon-sturgeon.cn
+```
+
+同时“公开访问路径前缀”填写：
+
+```text
+xianglupiju
+```
+
+系统最终会拼接为：
+
+```text
+https://xianglu.dragon-sturgeon.cn/xianglupiju/review-images-xxx.png
+```
+
+如果你的自定义 CDN 域名已经直接绑定到空间根路径，不需要 `/xianglupiju`，则路径前缀留空。

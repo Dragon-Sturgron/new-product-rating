@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260717-http-proxy-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260718-qiniu-path-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -98,6 +98,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             <label>上传大小上限MB<input name="image_max_size_mb" type="number" min="1" max="50" step="1" placeholder="10" /></label>
             <label>文件名前缀<input name="image_key_prefix" placeholder="review-images" /></label>
             <label class="wide">图片公开访问域名 / CDN域名<input name="public_image_base_url" placeholder="例如 https://img.example.com；国内OSS建议配置 CDN 或公开访问域名" /></label>
+            <label>公开访问路径前缀<input name="public_image_path_prefix" placeholder="例如七牛需要 /xianglupiju 时填 xianglupiju；不需要则留空" /></label>
             <div class="s3-settings wide">
               <label>S3 Endpoint<input name="s3_endpoint" placeholder="例如七牛云 https://s3-cn-east-1.qiniucs.com" /></label>
               <label>Bucket / 空间名<input name="s3_bucket" placeholder="你的 Bucket 或七牛空间名" /></label>
@@ -250,7 +251,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260717-http-proxy-v1" defer></script>
+  <script src="/assets/admin.js?v=20260718-qiniu-path-v1" defer></script>
 </body>
 </html>`;
 }

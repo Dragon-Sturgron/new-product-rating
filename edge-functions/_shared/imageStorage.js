@@ -68,6 +68,22 @@ function withTrailingSlash(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function cleanPathPrefix(value) {
+  return String(value || '').trim().replace(/^\/+|\/+$/g, '');
+}
+
+function encodedKeyPath(value) {
+  return String(value || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
+}
+
+function buildPublicUrl(publicBase, key, config = {}) {
+  const base = withTrailingSlash(publicBase);
+  const prefix = cleanPathPrefix(config.public_image_path_prefix);
+  const keyPath = encodedKeyPath(key);
+  if (!base) return '';
+  return prefix ? `${base}/${encodedKeyPath(prefix)}/${keyPath}` : `${base}/${keyPath}`;
+}
+
 function publicDisplayUrl(rawUrl) {
   const value = String(rawUrl || '').trim();
   if (!value) return value;
@@ -118,7 +134,7 @@ async function uploadToR2(env, config, key, bytes, contentType) {
   });
 
   const publicBase = withTrailingSlash(config.public_image_base_url);
-  const rawUrl = publicBase ? `${publicBase}/${encodeURI(key)}` : `/api/images/${encodeURIComponent(key)}`;
+  const rawUrl = publicBase ? buildPublicUrl(publicBase, key, config) : `/api/images/${encodeURIComponent(key)}`;
   const url = publicDisplayUrl(rawUrl);
   return { key, url, raw_url: rawUrl, storage: 'r2' };
 }
@@ -149,7 +165,7 @@ async function uploadToS3(config, key, bytes, contentType) {
   }
 
   const publicBase = withTrailingSlash(config.public_image_base_url);
-  const publicUrl = publicBase ? `${publicBase}/${encodeURI(key)}` : url.toString();
+  const publicUrl = publicBase ? buildPublicUrl(publicBase, key, config) : url.toString();
   return { key, url: publicDisplayUrl(publicUrl), raw_url: publicUrl, storage: 's3' };
 }
 
