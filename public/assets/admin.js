@@ -1,5 +1,5 @@
-console.info('[product-review] admin deferred image upload v2 loaded');
-console.info("product-review admin version: 20260717-style-delete-all-v1");
+console.info('[product-review] admin deferred image upload v3 loaded');
+console.info("product-review admin version: 20260718-display-url-normalize-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -45,6 +45,7 @@ let selectedScoreGroupKey = null;
 let scoreFields = [];
 let scoreTypes = [];
 let gradeRules = null;
+let currentImageSettings = { image_key_prefix: 'review-images', public_image_base_url: '', public_image_path_prefix: '', s3_endpoint: '', s3_bucket: '' };
 let editingStyleId = null;
 let inlineEditingStyleId = null;
 let editingScoreId = null;
@@ -108,12 +109,96 @@ const defaultGradeRules = {
 };
 
 function today() { return new Date().toISOString().slice(0, 10); }
-function displayImageUrl(value) {
+function stripImageProxyValue(value) {
   const raw = String(value || '').trim();
-  if (/^http:\/\//i.test(raw)) {
-    return `/api/public/image-proxy?url=${encodeURIComponent(raw)}`;
-  }
+  if (!raw) return '';
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.pathname === '/api/public/image-proxy') return url.searchParams.get('url') || raw;
+  } catch (_) {}
   return raw;
+}
+function trimBaseUrl(value) { return String(value || '').trim().replace(/\/+$/, ''); }
+function cleanPathPrefix(value) { return String(value || '').trim().replace(/^\/+|\/+$/g, ''); }
+function encodePath(value) { return String(value || '').split('/').filter(Boolean).map(encodeURIComponent).join('/'); }
+function decodePath(value) {
+  return String(value || '').split('/').filter(Boolean).map(part => {
+    try { return decodeURIComponent(part); } catch (_) { return part; }
+  }).join('/');
+}
+function looksLikeManagedKey(path, settings = {}) {
+  const clean = cleanPathPrefix(path);
+  if (!clean || clean.includes('..')) return false;
+  const prefix = cleanPathPrefix(settings.image_key_prefix || 'review-images');
+  return !prefix || clean === prefix || clean.startsWith(`${prefix}-`) || clean.startsWith(`${prefix}/`);
+}
+function buildPublicImageUrlFromKey(key, settings = {}) {
+  const base = trimBaseUrl(settings.public_image_base_url);
+  if (!base || !key) return '';
+  const prefix = cleanPathPrefix(settings.public_image_path_prefix);
+  const keyPath = encodePath(key);
+  return prefix ? `${base}/${encodePath(prefix)}/${keyPath}` : `${base}/${keyPath}`;
+}
+function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSettings || {}) {
+  const raw = stripImageProxyValue(value);
+  if (!raw || !/^https?:\/\//i.test(raw)) return raw;
+  const publicBase = trimBaseUrl(settings.public_image_base_url);
+  if (!publicBase) return raw;
+  const pathPrefix = cleanPathPrefix(settings.public_image_path_prefix);
+  let url;
+  let base;
+  try { url = new URL(raw); base = new URL(publicBase); } catch (_) { return raw; }
+  let key = '';
+  const rawPath = decodePath(url.pathname);
+  const path = cleanPathPrefix(rawPath);
+  if (url.origin === base.origin) {
+    const basePath = cleanPathPrefix(base.pathname);
+    let relative = path;
+    if (basePath && relative === basePath) relative = '';
+    else if (basePath && relative.startsWith(`${basePath}/`)) relative = relative.slice(basePath.length + 1);
+    if (pathPrefix && looksLikeManagedKey(relative, settings)) {
+      return buildPublicImageUrlFromKey(relative, settings);
+    }
+    return raw;
+  }
+  if (pathPrefix && path.startsWith(`${pathPrefix}/`)) {
+    key = path.slice(pathPrefix.length + 1);
+  }
+  const endpoint = trimBaseUrl(settings.s3_endpoint);
+  const bucket = String(settings.s3_bucket || '').trim();
+  if (!key && endpoint && bucket) {
+    try {
+      const ep = new URL(endpoint);
+      if (url.hostname === ep.hostname) {
+        let relative = path;
+        if (relative.startsWith(`${bucket}/`)) relative = relative.slice(bucket.length + 1);
+        if (pathPrefix && relative.startsWith(`${pathPrefix}/`)) relative = relative.slice(pathPrefix.length + 1);
+        if (looksLikeManagedKey(relative, settings)) key = relative;
+      } else if (url.hostname === `${bucket}.${ep.hostname}`) {
+        let relative = path;
+        if (pathPrefix && relative.startsWith(`${pathPrefix}/`)) relative = relative.slice(pathPrefix.length + 1);
+        if (looksLikeManagedKey(relative, settings)) key = relative;
+      }
+    } catch (_) {}
+  }
+  if (!key && looksLikeManagedKey(path, settings)) key = path;
+  if (!key) {
+    const managedPrefix = cleanPathPrefix(settings.image_key_prefix || 'review-images');
+    const marker = managedPrefix ? `${managedPrefix}-` : '';
+    if (marker) {
+      const parts = path.split('/');
+      const index = parts.findIndex(part => part.startsWith(marker));
+      if (index >= 0) key = parts.slice(index).join('/');
+    }
+  }
+  return key ? buildPublicImageUrlFromKey(key, settings) : raw;
+}
+function displayImageUrl(value) {
+  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
+  if (/^http:\/\//i.test(normalized)) {
+    return `/api/public/image-proxy?url=${encodeURIComponent(normalized)}`;
+  }
+  return normalized;
 }
 
 function escapeHtml(text) {
@@ -788,6 +873,7 @@ async function loadSettings() {
   scoreTypes = normalizeScoreTypesLocal(data.settings?.score_types || defaultScoreTypes);
   scoreFields = normalizeScoreFieldsLocal(data.settings?.score_fields || defaultScoreFields);
   gradeRules = normalizeGradeRulesLocal(data.settings?.grade_rules || defaultGradeRules);
+  currentImageSettings = normalizeImageSettingsLocal(data.settings?.image_settings || {});
   renderScoreTypeEditor();
   renderScoreFieldEditor();
   fillImageSettingsForm(data.settings?.image_settings || {});
@@ -816,8 +902,9 @@ function clearStyleLocalPreviewUrl() {
 }
 function renderStylePreviewImage(url, note = '') {
   const safe = String(url || '').trim();
+  const src = /^blob:|^data:/i.test(safe) ? safe : displayImageUrl(safe);
   stylePreview.innerHTML = safe
-    ? `<img class="image-preview" src="${escapeHtml(safe)}" alt="产品图预览" loading="lazy" referrerpolicy="no-referrer" />${note ? `<small class="preview-note">${escapeHtml(note)}</small>` : ''}`
+    ? `<img class="image-preview" src="${escapeHtml(src)}" alt="产品图预览" loading="lazy" referrerpolicy="no-referrer" />${note ? `<small class="preview-note">${escapeHtml(note)}</small>` : ''}`
     : '<span>拖拽图片到这里，或点击选择图片</span>';
 }
 function setImagePreview(url, options = {}) {

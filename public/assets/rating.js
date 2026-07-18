@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260716-name-page-desc-sync-v1");
+console.info("product-review rating version: 20260718-display-url-normalize-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -46,6 +46,7 @@ const nameGradeRuleIntro = $('#nameGradeRuleIntro');
 
 let scoreTypes = defaultScoreTypes.map(item => ({ ...item }));
 let gradeRules = null;
+let currentImageSettings = { image_key_prefix: 'review-images', public_image_base_url: '', public_image_path_prefix: '', s3_endpoint: '', s3_bucket: '' };
 let scoreFields = defaultScoreFields.map(item => ({ ...item }));
 let reviewer = '';
 let styles = [];
@@ -240,12 +241,96 @@ async function restoreServerDraftProgress(name = reviewer) {
   }
 }
 
-function displayImageUrl(value) {
+function stripImageProxyValue(value) {
   const raw = String(value || '').trim();
-  if (/^http:\/\//i.test(raw)) {
-    return `/api/public/image-proxy?url=${encodeURIComponent(raw)}`;
-  }
+  if (!raw) return '';
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.pathname === '/api/public/image-proxy') return url.searchParams.get('url') || raw;
+  } catch (_) {}
   return raw;
+}
+function trimBaseUrl(value) { return String(value || '').trim().replace(/\/+$/, ''); }
+function cleanPathPrefix(value) { return String(value || '').trim().replace(/^\/+|\/+$/g, ''); }
+function encodePath(value) { return String(value || '').split('/').filter(Boolean).map(encodeURIComponent).join('/'); }
+function decodePath(value) {
+  return String(value || '').split('/').filter(Boolean).map(part => {
+    try { return decodeURIComponent(part); } catch (_) { return part; }
+  }).join('/');
+}
+function looksLikeManagedKey(path, settings = {}) {
+  const clean = cleanPathPrefix(path);
+  if (!clean || clean.includes('..')) return false;
+  const prefix = cleanPathPrefix(settings.image_key_prefix || 'review-images');
+  return !prefix || clean === prefix || clean.startsWith(`${prefix}-`) || clean.startsWith(`${prefix}/`);
+}
+function buildPublicImageUrlFromKey(key, settings = {}) {
+  const base = trimBaseUrl(settings.public_image_base_url);
+  if (!base || !key) return '';
+  const prefix = cleanPathPrefix(settings.public_image_path_prefix);
+  const keyPath = encodePath(key);
+  return prefix ? `${base}/${encodePath(prefix)}/${keyPath}` : `${base}/${keyPath}`;
+}
+function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSettings || {}) {
+  const raw = stripImageProxyValue(value);
+  if (!raw || !/^https?:\/\//i.test(raw)) return raw;
+  const publicBase = trimBaseUrl(settings.public_image_base_url);
+  if (!publicBase) return raw;
+  const pathPrefix = cleanPathPrefix(settings.public_image_path_prefix);
+  let url;
+  let base;
+  try { url = new URL(raw); base = new URL(publicBase); } catch (_) { return raw; }
+  let key = '';
+  const rawPath = decodePath(url.pathname);
+  const path = cleanPathPrefix(rawPath);
+  if (url.origin === base.origin) {
+    const basePath = cleanPathPrefix(base.pathname);
+    let relative = path;
+    if (basePath && relative === basePath) relative = '';
+    else if (basePath && relative.startsWith(`${basePath}/`)) relative = relative.slice(basePath.length + 1);
+    if (pathPrefix && looksLikeManagedKey(relative, settings)) {
+      return buildPublicImageUrlFromKey(relative, settings);
+    }
+    return raw;
+  }
+  if (pathPrefix && path.startsWith(`${pathPrefix}/`)) {
+    key = path.slice(pathPrefix.length + 1);
+  }
+  const endpoint = trimBaseUrl(settings.s3_endpoint);
+  const bucket = String(settings.s3_bucket || '').trim();
+  if (!key && endpoint && bucket) {
+    try {
+      const ep = new URL(endpoint);
+      if (url.hostname === ep.hostname) {
+        let relative = path;
+        if (relative.startsWith(`${bucket}/`)) relative = relative.slice(bucket.length + 1);
+        if (pathPrefix && relative.startsWith(`${pathPrefix}/`)) relative = relative.slice(pathPrefix.length + 1);
+        if (looksLikeManagedKey(relative, settings)) key = relative;
+      } else if (url.hostname === `${bucket}.${ep.hostname}`) {
+        let relative = path;
+        if (pathPrefix && relative.startsWith(`${pathPrefix}/`)) relative = relative.slice(pathPrefix.length + 1);
+        if (looksLikeManagedKey(relative, settings)) key = relative;
+      }
+    } catch (_) {}
+  }
+  if (!key && looksLikeManagedKey(path, settings)) key = path;
+  if (!key) {
+    const managedPrefix = cleanPathPrefix(settings.image_key_prefix || 'review-images');
+    const marker = managedPrefix ? `${managedPrefix}-` : '';
+    if (marker) {
+      const parts = path.split('/');
+      const index = parts.findIndex(part => part.startsWith(marker));
+      if (index >= 0) key = parts.slice(index).join('/');
+    }
+  }
+  return key ? buildPublicImageUrlFromKey(key, settings) : raw;
+}
+function displayImageUrl(value) {
+  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
+  if (/^http:\/\//i.test(normalized)) {
+    return `/api/public/image-proxy?url=${encodeURIComponent(normalized)}`;
+  }
+  return normalized;
 }
 
 function escapeHtml(text) {
@@ -473,6 +558,7 @@ async function loadStyles() {
   scoreTypes = normalizeScoreTypes(data.score_types || defaultScoreTypes);
   scoreFields = normalizeScoreFields(data.score_fields || defaultScoreFields);
   gradeRules = normalizeGradeRules(data.grade_rules || defaultGradeRules);
+  currentImageSettings = data.image_settings || currentImageSettings;
   applyGradeRuleIntro();
   styles = data.styles || [];
   drafts = styles.map(makeDraft);
