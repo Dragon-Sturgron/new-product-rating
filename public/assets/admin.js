@@ -1,5 +1,5 @@
-console.info('[product-review] admin style import + custom dialogs v1 loaded');
-console.info("product-review admin version: 20260718-style-import-dialogs-v1");
+console.info('[product-review] admin import modal + paste upload v1 loaded');
+console.info("product-review admin version: 20260718-import-modal-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -46,6 +46,9 @@ const XLSX_CDN_URLS = [
 ];
 let styleImportFileInput = null;
 let xlsxLoaderPromise = null;
+let pendingStyleImportRecords = null;
+let pendingStyleImportMeta = null;
+const STYLE_IMPORT_TEMPLATE_URL = '/assets/templates/style-import-template.xlsx';
 
 let styles = [];
 let scores = [];
@@ -1051,15 +1054,7 @@ function normalizeImportPrice(value) {
   return match ? match[0] : '';
 }
 
-async function parseStyleExcelFile(file) {
-  const name = String(file?.name || '').toLowerCase();
-  if (!/\.(xlsx|xls)$/.test(name)) throw new Error('请选择 .xls 或 .xlsx 格式文件');
-  const XLSX = await ensureXlsxParser();
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-  const firstSheetName = workbook.SheetNames?.[0];
-  if (!firstSheetName) throw new Error('Excel 文件里没有工作表');
-  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { header: 1, defval: '', raw: false });
+function parseStyleRows(rows, sourceName = '导入数据') {
   const { rowIndex, columns } = findImportColumns(rows);
   const resultMap = new Map();
   let skippedBlank = 0;
@@ -1075,8 +1070,49 @@ async function parseStyleExcelFile(file) {
     resultMap.set(styleCode.toLowerCase(), item);
   }
   const records = Array.from(resultMap.values());
-  if (!records.length) throw new Error('Excel 中没有可导入的款式数据');
-  return { records, skippedBlank, sheetName: firstSheetName };
+  if (!records.length) throw new Error('没有可导入的款式数据，请确认表格里至少有一行款式编码。');
+  return { records, skippedBlank, sheetName: sourceName };
+}
+
+async function parseStyleExcelFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  const looksLikeExcel = /\.(xlsx|xls)$/.test(name) || type.includes('spreadsheet') || type.includes('ms-excel');
+  if (!looksLikeExcel) throw new Error('请选择 .xls 或 .xlsx 格式文件');
+  const XLSX = await ensureXlsxParser();
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const firstSheetName = workbook.SheetNames?.[0];
+  if (!firstSheetName) throw new Error('Excel 文件里没有工作表');
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { header: 1, defval: '', raw: false });
+  return parseStyleRows(rows, firstSheetName);
+}
+
+function parseDelimitedImportText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) throw new Error('剪贴板里没有可导入的表格内容');
+  const lines = raw.split(/\r?\n/).map(line => line.trimEnd()).filter(Boolean);
+  if (!lines.length) throw new Error('剪贴板里没有可导入的表格内容');
+  const delimiter = raw.includes('\t') ? '\t' : (raw.includes('|') ? '|' : ',');
+  const rows = lines.map(line => line.split(delimiter).map(cell => cell.trim().replace(/^"|"$/g, '')));
+  return parseStyleRows(rows, '剪贴板表格');
+}
+
+function getStyleImportFileFromClipboard(event) {
+  const clipboard = event.clipboardData;
+  if (!clipboard) return null;
+  const files = Array.from(clipboard.files || []);
+  const file = files.find(item => item && (/\.(xlsx|xls)$/i.test(item.name || '') || String(item.type || '').includes('spreadsheet') || String(item.type || '').includes('ms-excel')));
+  if (file) return file;
+  const items = Array.from(clipboard.items || []);
+  for (const item of items) {
+    const type = String(item.type || '');
+    if (item.kind === 'file' && (type.includes('spreadsheet') || type.includes('ms-excel'))) {
+      const got = item.getAsFile();
+      if (got) return got;
+    }
+  }
+  return null;
 }
 
 function buildImportPreviewHtml(records) {
@@ -1099,39 +1135,189 @@ function buildImportPreviewHtml(records) {
   </div>`;
 }
 
-async function handleStyleImportFile(file) {
-  const importBtn = document.getElementById('styleImportBtn');
-  setButtonBusy(importBtn, true, '读取中...');
+function renderImportModalPreview(parsed) {
+  const panel = document.getElementById('styleImportModalPreview');
+  const confirmBtn = document.getElementById('styleImportConfirmBtn');
+  if (!panel || !confirmBtn) return;
+  if (!parsed?.records?.length) {
+    panel.innerHTML = '<p class="tip">请选择、拖拽或粘贴 .xls / .xlsx 文件；也支持直接从 Excel 复制三列表格后粘贴。</p>';
+    confirmBtn.disabled = true;
+    return;
+  }
+  pendingStyleImportRecords = parsed.records;
+  pendingStyleImportMeta = parsed;
+  confirmBtn.disabled = false;
+  panel.innerHTML = `
+    <div class="import-ready-card">
+      <strong>已识别 ${parsed.records.length} 个款式</strong>
+      <span>来源：${escapeHtml(parsed.sheetName || parsed.fileName || '导入文件')}</span>
+    </div>
+    ${buildImportPreviewHtml(parsed.records)}`;
+}
+
+async function setStyleImportModalFile(file) {
+  const dropZone = document.getElementById('styleImportDropZone');
+  const preview = document.getElementById('styleImportDropPreview');
+  if (!file) return;
   try {
+    if (preview) preview.innerHTML = `<span>正在读取：${escapeHtml(file.name || 'Excel 文件')}</span>`;
     const parsed = await parseStyleExcelFile(file);
-    const confirmed = await showConfirmDialog({
-      title: '导入已配置款式？',
-      message: `已从“${parsed.sheetName}”识别到 ${parsed.records.length} 个款式。`,
-      details: [
-        '同款式编码已存在时，将更新“季节”和“基本售价”，并保留原来的图片、备注和启用状态。',
-        '新款式会默认启用评分，产品图先留空，后续可以逐个补图。',
-        '导入不会删除当前已有款式。'
-      ],
-      contentHtml: buildImportPreviewHtml(parsed.records),
-      confirmText: '确认导入',
-      cancelText: '先不导入',
-      danger: false,
-      icon: '导'
-    });
-    if (!confirmed) return;
-    setButtonBusy(importBtn, true, '导入中...');
+    parsed.fileName = file.name || 'Excel 文件';
+    renderImportModalPreview(parsed);
+    dropZone?.classList.add('paste-success');
+    setTimeout(() => dropZone?.classList.remove('paste-success'), 900);
+  } catch (e) {
+    pendingStyleImportRecords = null;
+    pendingStyleImportMeta = null;
+    renderImportModalPreview(null);
+    showMessage(e.message || '读取导入文件失败', 'error');
+  }
+}
+
+async function setStyleImportModalText(text) {
+  const dropZone = document.getElementById('styleImportDropZone');
+  try {
+    const parsed = parseDelimitedImportText(text);
+    renderImportModalPreview(parsed);
+    dropZone?.classList.add('paste-success');
+    setTimeout(() => dropZone?.classList.remove('paste-success'), 900);
+  } catch (e) {
+    showMessage(e.message || '粘贴的表格内容无法识别', 'error');
+  }
+}
+
+async function importPendingStyleRecords() {
+  const confirmBtn = document.getElementById('styleImportConfirmBtn');
+  if (!pendingStyleImportRecords?.length) {
+    showMessage('请先选择、拖拽或粘贴需要导入的款式文件', 'error');
+    return;
+  }
+  setButtonBusy(confirmBtn, true, '导入中...');
+  try {
     const data = await requestJson('/api/styles/import', {
       method: 'POST',
       headers: { 'content-type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ styles: parsed.records })
+      body: JSON.stringify({ styles: pendingStyleImportRecords })
     });
+    closeStyleImportDialog();
     showMessage(`导入完成：新增 ${data.created_count || 0} 个，更新 ${data.updated_count || 0} 个，跳过 ${data.skipped_count || 0} 个。`);
     await loadStyles();
   } catch (e) {
     showMessage(e.message || '导入失败', 'error');
   } finally {
-    setButtonBusy(importBtn, false);
+    setButtonBusy(confirmBtn, false);
   }
+}
+
+function downloadStyleImportTemplate() {
+  const a = document.createElement('a');
+  a.href = STYLE_IMPORT_TEMPLATE_URL;
+  a.download = '款式导入模板.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function closeStyleImportDialog() {
+  document.removeEventListener('keydown', styleImportDialogKeyHandler);
+  document.removeEventListener('paste', styleImportDialogPasteHandler);
+  const host = ensureDialogHost();
+  host.innerHTML = '';
+  pendingStyleImportRecords = null;
+  pendingStyleImportMeta = null;
+}
+
+function styleImportDialogKeyHandler(event) {
+  if (event.key === 'Escape') closeStyleImportDialog();
+}
+
+async function styleImportDialogPasteHandler(event) {
+  const modal = document.getElementById('styleImportModal');
+  if (!modal) return;
+  const file = getStyleImportFileFromClipboard(event);
+  if (file) {
+    event.preventDefault();
+    event.stopPropagation();
+    await setStyleImportModalFile(file);
+    return;
+  }
+  const text = event.clipboardData?.getData('text/plain') || '';
+  if (text && /款式编码|款号|style\s*code|\t/.test(text)) {
+    event.preventDefault();
+    event.stopPropagation();
+    await setStyleImportModalText(text);
+  }
+}
+
+function openStyleImportDialog() {
+  const host = ensureDialogHost();
+  pendingStyleImportRecords = null;
+  pendingStyleImportMeta = null;
+  host.innerHTML = `
+    <div class="modal-backdrop" data-import-backdrop>
+      <div id="styleImportModal" class="confirm-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="styleImportDialogTitle">
+        <div class="confirm-icon info">导</div>
+        <div class="confirm-body import-dialog-body">
+          <h3 id="styleImportDialogTitle">导入已配置款式</h3>
+          <p>支持 .xls / .xlsx 文件；字段需要包含“款式编码、季节、基本售价”。同款式编码会更新季节和基本售价，并保留原图片、备注和启用状态。</p>
+          <input class="visually-hidden" id="styleImportFileInput" type="file" accept="${STYLE_IMPORT_ACCEPT}" />
+          <div id="styleImportDropZone" class="drop-zone import-drop-zone" tabindex="0" role="button" aria-label="点击、拖拽或粘贴导入款式 Excel 文件">
+            <div id="styleImportDropPreview" class="drop-preview import-file-preview"><span>点击选择文件、拖拽 Excel 到这里，或复制文件/表格后 Ctrl+V 粘贴</span></div>
+            <div class="drop-text">
+              <strong>上传导入文件</strong>
+              <span>支持 .xls / .xlsx；也支持从 Excel 复制“款式编码、季节、基本售价”三列表格后粘贴。</span>
+            </div>
+          </div>
+          <div id="styleImportModalPreview" class="import-modal-preview"><p class="tip">还没有选择文件。可以先点“导入模板”下载标准模板。</p></div>
+        </div>
+        <div class="confirm-actions import-actions">
+          <button class="ghost" type="button" id="styleImportCancelBtn">取消</button>
+          <button class="primary-light" type="button" id="styleImportTemplateBtn">导入模板</button>
+          <button class="primary" type="button" id="styleImportConfirmBtn" disabled>确定</button>
+        </div>
+      </div>
+    </div>`;
+
+  styleImportFileInput = document.getElementById('styleImportFileInput');
+  const dropZone = document.getElementById('styleImportDropZone');
+  const backdrop = host.querySelector('[data-import-backdrop]');
+  const cancelBtn = document.getElementById('styleImportCancelBtn');
+  const templateBtn = document.getElementById('styleImportTemplateBtn');
+  const confirmBtn = document.getElementById('styleImportConfirmBtn');
+
+  const chooseFile = () => styleImportFileInput?.click();
+  dropZone.addEventListener('click', chooseFile);
+  dropZone.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); chooseFile(); }
+  });
+  styleImportFileInput.addEventListener('change', async () => {
+    const file = styleImportFileInput.files?.[0];
+    styleImportFileInput.value = '';
+    if (file) await setStyleImportModalFile(file);
+  });
+  ['dragenter', 'dragover'].forEach(name => dropZone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropZone.classList.add('drag-over');
+  }));
+  ['dragleave', 'drop'].forEach(name => dropZone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropZone.classList.remove('drag-over');
+  }));
+  dropZone.addEventListener('drop', async (event) => {
+    const file = Array.from(event.dataTransfer?.files || []).find(item => /\.(xlsx|xls)$/i.test(item.name || '') || String(item.type || '').includes('spreadsheet') || String(item.type || '').includes('ms-excel'));
+    if (file) await setStyleImportModalFile(file);
+    else showMessage('请拖入 .xls 或 .xlsx 格式文件', 'error');
+  });
+  dropZone.addEventListener('paste', styleImportDialogPasteHandler);
+  backdrop.addEventListener('click', event => {
+    if (event.target === backdrop) closeStyleImportDialog();
+  });
+  cancelBtn.addEventListener('click', closeStyleImportDialog);
+  templateBtn.addEventListener('click', downloadStyleImportTemplate);
+  confirmBtn.addEventListener('click', importPendingStyleRecords);
+  document.addEventListener('keydown', styleImportDialogKeyHandler);
+  document.addEventListener('paste', styleImportDialogPasteHandler);
+  window.setTimeout(() => dropZone.focus(), 20);
 }
 
 function ensureStyleImportControls() {
@@ -1141,19 +1327,8 @@ function ensureStyleImportControls() {
   importBtn.className = 'primary-light';
   importBtn.type = 'button';
   importBtn.textContent = '导入款式';
-  styleImportFileInput = document.createElement('input');
-  styleImportFileInput.type = 'file';
-  styleImportFileInput.accept = STYLE_IMPORT_ACCEPT;
-  styleImportFileInput.className = 'visually-hidden';
-  styleImportFileInput.id = 'styleImportFileInput';
   deleteAllStylesBtn.insertAdjacentElement('beforebegin', importBtn);
-  deleteAllStylesBtn.insertAdjacentElement('beforebegin', styleImportFileInput);
-  importBtn.addEventListener('click', () => styleImportFileInput.click());
-  styleImportFileInput.addEventListener('change', async () => {
-    const file = styleImportFileInput.files?.[0];
-    styleImportFileInput.value = '';
-    if (file) await handleStyleImportFile(file);
-  });
+  importBtn.addEventListener('click', openStyleImportDialog);
 }
 async function loadScores() {
   const params = new URLSearchParams(new FormData(scoreSearchForm));

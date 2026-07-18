@@ -1494,3 +1494,53 @@ button.disabled {
   .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .confirm-actions button { width: 100%; }
 }
+
+/* 2026-07: 导入款式弹框支持点击、拖拽、粘贴与模板下载 */
+.import-dialog {
+  width: min(760px, 100%);
+  max-height: min(88vh, 780px);
+}
+.import-dialog-body {
+  min-width: 0;
+}
+.import-drop-zone {
+  margin-top: 14px;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  min-height: 150px;
+  border-color: #93c5fd;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 56%, #f0fdf4 100%);
+}
+.import-file-preview {
+  min-height: 116px;
+  border-style: dashed;
+}
+.import-modal-preview {
+  margin-top: 14px;
+}
+.import-ready-card {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  color: #166534;
+  background: #f0fdf4;
+}
+.import-ready-card span {
+  color: #64748b;
+  font-size: 13px;
+}
+.import-actions {
+  align-items: center;
+}
+.import-actions #styleImportTemplateBtn {
+  margin-right: auto;
+}
+@media (max-width: 640px) {
+  .import-drop-zone { grid-template-columns: 1fr; }
+  .import-actions { grid-template-columns: 1fr; }
+  .import-actions #styleImportTemplateBtn { margin-right: 0; }
+}
