@@ -59,6 +59,8 @@ let reviewLinkCode = (() => {
 })();
 let reviewLinkInfo = null;
 let reviewLinkUnavailable = false;
+const ACCESS_ERROR_MESSAGE = '请勿直接访问系统域名，评分必须通过管理员生成的有效链接进入。';
+
 let scoreFields = defaultScoreFields.map(item => ({ ...item }));
 let reviewer = '';
 let styles = [];
@@ -473,19 +475,19 @@ function applyGradeRuleIntro() {
 
 
 function publicDataUrl() {
-  if (!reviewLinkCode) throw new Error('访问地址有问题，请联系管理员获取正确的评分链接。');
+  if (!reviewLinkCode) throw new Error(ACCESS_ERROR_MESSAGE);
   return `/api/public/review-link/${encodeURIComponent(reviewLinkCode)}`;
 }
-function showAccessError(message = '访问地址有问题，请联系管理员获取正确的评分链接。') {
+function showAccessError(message = ACCESS_ERROR_MESSAGE) {
   reviewLinkUnavailable = true;
-  if (accessErrorText) accessErrorText.textContent = message;
+  if (accessErrorText) accessErrorText.textContent = ACCESS_ERROR_MESSAGE;
   [nameView, ratingView, doneView].forEach(el => el?.classList.add('hidden'));
   accessErrorView?.classList.remove('hidden');
   publicTopbar?.classList.add('hidden');
   messageBox?.classList.add('hidden');
 }
 function handleReviewLinkAccessError(error) {
-  showAccessError(error?.message || '该评分链接不可用，请联系管理员重新生成。');
+  showAccessError(ACCESS_ERROR_MESSAGE);
 }
 
 async function loadPublicIntro() {
