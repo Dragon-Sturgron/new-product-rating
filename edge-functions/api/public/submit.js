@@ -52,6 +52,9 @@ export async function onRequestPost({ request, env }) {
     if (!reviewer) return json({ ok: false, message: '评分人姓名不能为空' }, 400);
 
     const reviewLinkCode = normalizeLinkCode(payload.review_link_code || payload.reviewLinkCode || '');
+    if (!reviewLinkCode) {
+      return json({ ok: false, code: 'REVIEW_LINK_REQUIRED', message: '访问地址有问题，请联系管理员获取正确的评分链接。' }, 403);
+    }
     if (reviewLinkCode) {
       if (typeof storage.getReviewLink !== 'function') return json({ ok: false, message: '当前存储暂不支持评分链接' }, 400);
       const link = await storage.getReviewLink(reviewLinkCode);

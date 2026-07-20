@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260720-review-link-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260720-review-link-required-v2" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -35,14 +35,14 @@ function adminHtml(adminPath, sessionIdleMinutes) {
         <label>管理密码<input type="password" name="password" placeholder="请输入后台管理密码" autocomplete="current-password" required /></label>
         <button type="submit" class="primary full">登录后台</button>
       </form>
-      <p class="tip">后台入口：<code>${adminPath}</code>。普通评分人员访问首页，输入姓名后直接评分。</p>
+      <p class="tip">后台入口：<code>${adminPath}</code>。评分人员只能通过管理员生成的有效评分链接进入。</p>
     </section>
 
     <section id="appView" class="hidden">
       <header class="topbar">
         <div>
           <h1>新品评审后台</h1>
-          <p>配置“哪些款需要评分”和“评分项”；前端评分人员输入姓名后逐款评分。</p>
+          <p>配置“哪些款需要评分”和“评分项”；评分人员通过管理员生成的有效链接逐款评分。</p>
         </div>
         <div class="top-actions">
           <button id="printBtn" class="ghost" type="button">打印评分结果</button>
@@ -277,7 +277,34 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260720-review-link-v1" defer></script>
+  <script src="/assets/admin.js?v=20260720-review-link-required-v2" defer></script>
+</body>
+</html>`;
+}
+
+function accessErrorHtml() {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>无法进入评分</title>
+  <link rel="stylesheet" href="/assets/style.css?v=20260720-review-link-required-v2" />
+</head>
+<body>
+  <div class="page-bg"></div>
+  <main class="container public-container">
+    <section class="login-card card access-error-card" role="alert">
+      <div class="brand">
+        <div class="brand-mark access-error-mark">!</div>
+        <div>
+          <h1>无法进入评分</h1>
+          <p>访问地址有问题，请联系管理员获取正确的评分链接。</p>
+        </div>
+      </div>
+      <p class="access-error-tip">请勿直接访问系统域名，评分必须通过管理员生成的有效链接进入。</p>
+    </section>
+  </main>
 </body>
 </html>`;
 }
@@ -294,6 +321,7 @@ export async function onRequest(context) {
   if (request.method === 'GET' || request.method === 'HEAD') {
     const normalizedPath = url.pathname.replace(/\/+$/, '') || '/';
     if (normalizedPath === adminPath) return responseHtml(adminHtml(adminPath, sessionIdleMinutes));
+    if (normalizedPath === '/') return responseHtml(accessErrorHtml());
     const isAssetLike = normalizedPath.startsWith('/assets') || normalizedPath.startsWith('/api') || /\.[a-zA-Z0-9]{1,8}$/.test(normalizedPath);
     if (normalizedPath !== '/' && !isAssetLike) {
       const indexUrl = new URL('/', url);

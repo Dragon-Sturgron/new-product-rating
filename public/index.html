@@ -4,21 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审评分</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260720-review-link-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260720-review-link-required-v2" />
 </head>
 <body>
   <div class="page-bg"></div>
   <main class="container public-container">
-    <header class="topbar public-topbar">
+    <header id="publicTopbar" class="topbar public-topbar hidden">
       <div>
         <h1>新品评审评分</h1>
         <p id="gradeRuleIntro">评分项和满分由后台配置；80%以上大单，60%以上中单，40%以上小单试水，40%以下建议不下</p>
       </div>
     </header>
 
+    <section id="accessErrorView" class="login-card card access-error-card hidden" role="alert">
+      <div class="brand">
+        <div class="brand-mark access-error-mark">!</div>
+        <div>
+          <h1>无法进入评分</h1>
+          <p id="accessErrorText">访问地址有问题，请联系管理员获取正确的评分链接。</p>
+        </div>
+      </div>
+      <p class="access-error-tip">请勿直接访问系统域名，评分必须通过管理员生成的有效链接进入。</p>
+    </section>
+
     <div id="message" class="message hidden"></div>
 
-    <section id="nameView" class="login-card card">
+    <section id="nameView" class="login-card card hidden">
       <div class="brand">
         <div class="brand-mark">评</div>
         <div>
@@ -34,7 +45,7 @@
         </label>
         <button type="submit" class="primary full">进入评分</button>
       </form>
-      <p class="tip">普通评分页面不需要后台账号。后台入口不会在首页显示。</p>
+      <p class="tip">评分必须通过管理员生成的有效链接进入，不需要后台账号。</p>
     </section>
 
     <section id="ratingView" class="card score-card hidden">
@@ -75,6 +86,16 @@
       <button id="restartBtn" type="button" class="primary full">重新评分</button>
     </section>
   </main>
-  <script src="/assets/rating.js?v=20260720-review-link-v1" defer></script>
+  <script>
+    (() => {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      const code = parts.length === 1 ? parts[0] : '';
+      const looksLikeReviewLink = !!code && !/^(assets|api|admin)$/i.test(code) && !code.includes('.');
+      const target = document.getElementById(looksLikeReviewLink ? 'nameView' : 'accessErrorView');
+      if (target) target.classList.remove('hidden');
+      if (looksLikeReviewLink) document.getElementById('publicTopbar')?.classList.remove('hidden');
+    })();
+  </script>
+  <script src="/assets/rating.js?v=20260720-review-link-required-v2" defer></script>
 </body>
 </html>

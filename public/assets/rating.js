@@ -1,7 +1,10 @@
-console.info("product-review rating version: 20260720-review-link-v1");
+console.info("product-review rating version: 20260720-review-link-required-v2");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+const accessErrorView = $('#accessErrorView');
+const accessErrorText = $('#accessErrorText');
+const publicTopbar = $('#publicTopbar');
 const nameView = $('#nameView');
 const ratingView = $('#ratingView');
 const doneView = $('#doneView');
@@ -470,26 +473,36 @@ function applyGradeRuleIntro() {
 
 
 function publicDataUrl() {
-  return reviewLinkCode ? `/api/public/review-link/${encodeURIComponent(reviewLinkCode)}` : '/api/public/styles';
+  if (!reviewLinkCode) throw new Error('访问地址有问题，请联系管理员获取正确的评分链接。');
+  return `/api/public/review-link/${encodeURIComponent(reviewLinkCode)}`;
+}
+function showAccessError(message = '访问地址有问题，请联系管理员获取正确的评分链接。') {
+  reviewLinkUnavailable = true;
+  if (accessErrorText) accessErrorText.textContent = message;
+  [nameView, ratingView, doneView].forEach(el => el?.classList.add('hidden'));
+  accessErrorView?.classList.remove('hidden');
+  publicTopbar?.classList.add('hidden');
+  messageBox?.classList.add('hidden');
 }
 function handleReviewLinkAccessError(error) {
-  reviewLinkUnavailable = true;
-  showMessage(error?.message || '该评分链接不可用，请联系管理员重新生成。', 'error');
-  if (reviewerForm) {
-    const btn = reviewerForm.querySelector('button[type="submit"]');
-    if (btn) btn.disabled = true;
-    const input = reviewerForm.querySelector('input[name="reviewer"]');
-    if (input) input.disabled = true;
-  }
+  showAccessError(error?.message || '该评分链接不可用，请联系管理员重新生成。');
 }
 
 async function loadPublicIntro() {
+  if (!reviewLinkCode) {
+    showAccessError();
+    return false;
+  }
   try {
     const data = await requestJson(publicDataUrl());
     reviewLinkInfo = data.review_link || null;
     if (reviewLinkInfo && document.querySelector('.public-topbar h1')) document.querySelector('.public-topbar h1').textContent = reviewLinkInfo.name || '新品评审评分';
     gradeRules = normalizeGradeRules(data.grade_rules || defaultGradeRules);
     applyGradeRuleIntro();
+    reviewLinkUnavailable = false;
+    accessErrorView?.classList.add('hidden');
+    nameView?.classList.remove('hidden');
+    publicTopbar?.classList.remove('hidden');
     return true;
   } catch (e) {
     console.warn('加载前端说明文字失败，继续使用默认说明', e);
@@ -565,8 +578,8 @@ function isComplete(draft) {
 }
 
 function showView(view) {
-  [nameView, ratingView, doneView].forEach(el => el.classList.add('hidden'));
-  view.classList.remove('hidden');
+  [accessErrorView, nameView, ratingView, doneView].forEach(el => el?.classList.add('hidden'));
+  view?.classList.remove('hidden');
 }
 
 async function requestJson(path, options = {}) {
@@ -944,4 +957,5 @@ window.addEventListener('beforeunload', () => {
 purgeExpiredDrafts();
 
 applyGradeRuleIntro();
-loadPublicIntro();
+if (reviewLinkCode) loadPublicIntro();
+else showAccessError();

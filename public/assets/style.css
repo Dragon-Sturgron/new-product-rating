@@ -73,6 +73,26 @@ body {
   font-weight: 800;
 }
 
+.access-error-card {
+  border-color: #fecaca;
+}
+
+.access-error-card .brand {
+  margin-bottom: 18px;
+}
+
+.access-error-mark {
+  background: var(--danger);
+}
+
+.access-error-tip {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #991b1b;
+  line-height: 1.7;
+}
+
 h1, h2, p { margin: 0; }
 .brand h1,
 .topbar h1 { font-size: 28px; letter-spacing: -0.02em; }
