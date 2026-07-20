@@ -266,6 +266,7 @@ export async function onRequestGet({ request, env }) {
       '综合评分总分',
       '独立评分总分',
       '评分人',
+      '评分链接',
       '评分日期'
     ];
     const rows = scores.map(score => [
@@ -279,6 +280,7 @@ export async function onRequestGet({ request, env }) {
       findSystemTotal(score, '综合评分总分'),
       findSystemTotal(score, '独立评分总分'),
       score.reviewer,
+      score.review_link_code || '',
       score.review_date || score.created_at || ''
     ]);
     const xlsx = buildXlsx([headers, ...rows]);

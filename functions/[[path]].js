@@ -204,7 +204,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             <button class="primary" type="submit">查询</button>
             <button class="ghost" type="button" id="clearStyleSearchBtn">重置</button>
             <button class="primary-light" type="button" id="generateReviewLinkBtn">生成评分链接</button>
-            <button class="danger-light" type="button" id="deleteAllStylesBtn">全部删除</button>
+            <button class="danger-light" type="button" id="deleteAllStylesBtn">选中删除</button>
           </form>
         </div>
         <div class="mobile-help no-print">手机端列表可左右滑动查看完整字段。</div>

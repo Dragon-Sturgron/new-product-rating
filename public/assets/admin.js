@@ -1,5 +1,5 @@
 console.info('[product-review] admin review-link v1 loaded');
-console.info("product-review admin version: 20260720-review-link-v1");
+console.info("product-review admin version: 20260720-review-link-v2");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -190,6 +190,23 @@ function isReviewLinkExpired(link) {
 function reviewLinkUrl(code) {
   return `${window.location.origin}/${encodeURIComponent(String(code || '').trim())}`;
 }
+
+function reviewLinkLabel(code) {
+  const cleanCode = String(code || '').trim();
+  if (!cleanCode) return '未绑定';
+  const link = reviewLinks.find(item => String(item.code || '').trim() === cleanCode);
+  return link?.name ? `${link.name} (${cleanCode})` : cleanCode;
+}
+function reviewLinkInlineHtml(code) {
+  const cleanCode = String(code || '').trim();
+  if (!cleanCode) return '<span class="muted">未绑定</span>';
+  const link = reviewLinks.find(item => String(item.code || '').trim() === cleanCode);
+  if (link?.name && link.name !== cleanCode) {
+    return `<strong>${escapeHtml(link.name)}</strong><small class="review-link-inline-code">${escapeHtml(cleanCode)}</small>`;
+  }
+  return `<span>${escapeHtml(cleanCode)}</span>`;
+}
+
 async function copyText(value) {
   const text = String(value || '');
   if (navigator.clipboard && window.isSecureContext) {
@@ -854,11 +871,13 @@ function buildScoreGroups(rows) {
         key,
         reviewer: String(score.reviewer || '').trim() || '未命名',
         submitted_at: getScoreSubmitTime(score),
+        review_link_code: String(score.review_link_code || '').trim(),
         scores: []
       });
     }
     const group = groups.get(key);
     group.scores.push(score);
+    if (!group.review_link_code && score.review_link_code) group.review_link_code = String(score.review_link_code || '').trim();
     if (getScoreSubmitTime(score) > group.submitted_at) group.submitted_at = getScoreSubmitTime(score);
   }
   return Array.from(groups.values())
@@ -877,12 +896,12 @@ function renderScoreGroupDetail(group) {
   const labels = Array.from(labelMap.values()).sort((a, b) => String(scoreTypeLabel(a.score_type, a)).localeCompare(String(scoreTypeLabel(b.score_type, b))));
   return `
     <tr class="score-group-detail-row">
-      <td colspan="3">
+      <td colspan="4">
         <div class="score-group-detail">
           <div class="section-title compact-title">
             <div>
               <h3>${escapeHtml(group.reviewer)} 的本次提交明细</h3>
-              <p class="tip">提交时间：${escapeHtml(group.submitted_at || '-')}，共 ${group.scores.length} 款。</p>
+              <p class="tip">提交时间：${escapeHtml(group.submitted_at || '-')}，评分链接：${escapeHtml(reviewLinkLabel(group.review_link_code))}，共 ${group.scores.length} 款。</p>
             </div>
           </div>
           <div class="table-wrap nested-table-wrap">
@@ -1051,11 +1070,12 @@ function renderScores() {
   scoresHead.innerHTML = `
     <tr>
       <th>评分人</th>
+      <th>评分链接</th>
       <th>提交时间</th>
       <th class="no-print">操作</th>
     </tr>`;
   if (!scoreGroups.length) {
-    scoresBody.innerHTML = '<tr><td class="empty" colspan="3">暂无评分记录。</td></tr>';
+    scoresBody.innerHTML = '<tr><td class="empty" colspan="4">暂无评分记录。</td></tr>';
     return;
   }
   scoresBody.innerHTML = scoreGroups.map((group, index) => {
@@ -1066,6 +1086,7 @@ function renderScores() {
           <button class="link-button reviewer-link" type="button" data-score-group-action="toggle" data-group-index="${index}">${escapeHtml(group.reviewer)}</button>
           <span class="group-count">${group.scores.length} 款</span>
         </td>
+        <td class="review-link-group-cell">${reviewLinkInlineHtml(group.review_link_code)}</td>
         <td>${escapeHtml(group.submitted_at || '-')}</td>
         <td class="no-print"><div class="actions">
           <button class="ghost" type="button" data-score-group-action="toggle" data-group-index="${index}">${opened ? '收起' : '查看'}</button>
@@ -1493,6 +1514,7 @@ async function loadReviewLinks() {
   const data = await requestJson('/api/review-links');
   reviewLinks = data.links || [];
   renderReviewLinks();
+  if (scores.length) renderScores();
 }
 function selectedStyleRows() {
   const ids = new Set(Array.from(selectedStyleIds).map(String));
@@ -2009,16 +2031,18 @@ ensureStyleImportControls();
 
 if (deleteAllStylesBtn) {
   deleteAllStylesBtn.addEventListener('click', async (event) => {
-    if (!styles.length) {
-      showMessage('当前没有可删除的款式。', 'error');
+    const ids = Array.from(selectedStyleIds).map(String).filter(Boolean);
+    if (!ids.length) {
+      showMessage('请先勾选要删除的款式。', 'error');
       return;
     }
-    const count = styles.length;
+    const selectedRows = styles.filter(row => ids.includes(String(row.id)));
+    const count = selectedRows.length || ids.length;
     const confirmed = await showConfirmDialog({
-      title: '删除全部已配置款式？',
-      message: '确定删除当前查询结果中的全部已配置款式吗？',
+      title: '删除选中款式？',
+      message: '确定删除当前勾选的已配置款式吗？',
       details: [`本次将删除 ${count} 个款式。`, '删除后不可恢复，前端评分页也不会再显示这些款式。', '对应的七牛云/OSS 图片也会尝试同步清理。'],
-      confirmText: '确认全部删除',
+      confirmText: '确认删除',
       cancelText: '取消',
       danger: true,
       icon: '删'
@@ -2026,14 +2050,14 @@ if (deleteAllStylesBtn) {
     if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
-      const params = new URLSearchParams(new FormData(styleSearchForm));
-      const data = await requestJson(`/api/styles/delete-all?${params}`, { method: 'DELETE' });
-      showMessage(`已删除 ${data.deleted_count || 0} 个款式。`);
+      await Promise.all(ids.map(id => requestJson(`/api/styles/${encodeURIComponent(id)}`, { method: 'DELETE' })));
+      ids.forEach(id => selectedStyleIds.delete(id));
       inlineEditingStyleId = null;
       resetStyleForm();
+      showMessage(`已删除 ${count} 个款式。`);
       await loadStyles();
     } catch (e) {
-      showMessage(e.message || '全部删除款式失败', 'error');
+      showMessage(e.message || '删除选中款式失败', 'error');
     } finally {
       setButtonBusy(event.currentTarget, false);
     }

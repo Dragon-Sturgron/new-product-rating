@@ -1082,6 +1082,20 @@ button.disabled {
 }
 
 /* 评分结果按一次提交聚合展示 */
+
+.review-link-group-cell {
+  min-width: 180px;
+}
+.review-link-group-cell strong,
+.review-link-group-cell span {
+  display: block;
+}
+.review-link-inline-code {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .link-button {
   appearance: none;
   border: 0;
