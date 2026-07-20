@@ -1609,12 +1609,25 @@ button.disabled {
 }
 
 /* 评分链接与款式勾选 */
-.select-col { width: 64px; text-align: center; }
+.select-col { width: 84px; text-align: center; }
 .select-col input[type="checkbox"] {
   width: 18px;
   height: 18px;
   accent-color: #2563eb;
   cursor: pointer;
+}
+.select-all-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.select-all-toggle span {
+  line-height: 1;
 }
 .link-table { min-width: 960px; }
 .link-url-cell code {
@@ -1637,8 +1650,14 @@ button.disabled {
   font-weight: 400;
   line-height: 1.4;
 }
-.review-link-dialog { max-width: 720px; }
-.review-link-dialog-body { min-width: min(560px, calc(100vw - 120px)); }
+.review-link-dialog {
+  width: min(920px, calc(100vw - 40px));
+  max-width: 920px;
+  max-height: min(88vh, 820px);
+}
+.review-link-dialog-body {
+  min-width: 0;
+}
 .review-link-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1672,11 +1691,14 @@ button.disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
+  align-content: flex-start;
   padding: 12px;
   background: #f8fafc;
   border: 1px solid var(--line);
   border-radius: 14px;
+  max-height: 240px;
+  overflow: auto;
 }
 .selected-style-preview span {
   display: inline-flex;
@@ -1689,7 +1711,9 @@ button.disabled {
 }
 .selected-style-preview em { color: var(--muted); font-style: normal; }
 @media (max-width: 680px) {
+  .review-link-dialog { width: min(100%, calc(100vw - 20px)); }
   .review-link-form-grid { grid-template-columns: 1fr; }
   .review-link-dialog-body { min-width: 0; }
+  .selected-style-preview { max-height: 180px; }
   .link-url-cell code { max-width: 220px; }
 }

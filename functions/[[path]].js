@@ -210,7 +210,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
         <div class="mobile-help no-print">手机端列表可左右滑动查看完整字段。</div>
         <div class="table-wrap">
           <table class="review-table style-table">
-            <thead><tr><th class="no-print select-col">选择</th><th>产品图</th><th>款式编码</th><th>季节</th><th>基本售价</th><th>状态</th><th>备注</th><th>创建时间</th><th class="no-print">操作</th></tr></thead>
+            <thead><tr><th class="no-print select-col"><label class="select-all-toggle"><input type="checkbox" id="styleSelectAll" data-style-select-all /> <span>全选</span></label></th><th>产品图</th><th>款式编码</th><th>季节</th><th>基本售价</th><th>状态</th><th>备注</th><th>创建时间</th><th class="no-print">操作</th></tr></thead>
             <tbody id="stylesBody"></tbody>
           </table>
         </div>

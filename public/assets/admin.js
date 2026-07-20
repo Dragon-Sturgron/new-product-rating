@@ -998,10 +998,27 @@ async function commitPendingInlineImageIfNeeded(row) {
   updateInlineImagePreview(row, url);
   return url;
 }
+function updateStyleSelectAllState() {
+  const selectAllInput = document.querySelector('[data-style-select-all]');
+  if (!selectAllInput) return;
+  const visibleIds = styles.map(item => String(item.id)).filter(Boolean);
+  if (!visibleIds.length) {
+    selectAllInput.checked = false;
+    selectAllInput.indeterminate = false;
+    selectAllInput.disabled = true;
+    return;
+  }
+  selectAllInput.disabled = false;
+  const selectedCount = visibleIds.filter(id => selectedStyleIds.has(id)).length;
+  selectAllInput.checked = selectedCount > 0 && selectedCount === visibleIds.length;
+  selectAllInput.indeterminate = selectedCount > 0 && selectedCount < visibleIds.length;
+}
+
 function renderStyles() {
   renderStats();
   if (!styles.length) {
     stylesBody.innerHTML = '<tr><td class="empty" colspan="9">暂无款式，请先在后台新增需要评分的款式。</td></tr>';
+    updateStyleSelectAllState();
     return;
   }
   stylesBody.innerHTML = styles.map(style => {
@@ -1024,6 +1041,7 @@ function renderStyles() {
       </tr>
     `;
   }).join('');
+  updateStyleSelectAllState();
 }
 function renderScores() {
   renderStats();
@@ -1996,6 +2014,7 @@ stylesBody.addEventListener('change', async (event) => {
     const id = String(selectInput.dataset.styleSelect || '');
     if (selectInput.checked) selectedStyleIds.add(id);
     else selectedStyleIds.delete(id);
+    updateStyleSelectAllState();
     return;
   }
   const fileInput = event.target.closest('[data-inline-image-file]');
@@ -2010,6 +2029,20 @@ stylesBody.addEventListener('change', async (event) => {
   } catch(e) { showMessage(e.message, 'error'); }
   finally { fileInput.value = ''; }
 });
+document.addEventListener('change', (event) => {
+  const selectAllInput = event.target.closest('[data-style-select-all]');
+  if (!selectAllInput) return;
+  const visibleIds = styles.map(item => String(item.id)).filter(Boolean);
+  if (!visibleIds.length) {
+    selectAllInput.checked = false;
+    selectAllInput.indeterminate = false;
+    return;
+  }
+  if (selectAllInput.checked) visibleIds.forEach(id => selectedStyleIds.add(id));
+  else visibleIds.forEach(id => selectedStyleIds.delete(id));
+  renderStyles();
+});
+
 stylesBody.addEventListener('input', (event) => {
   const imageInput = event.target.closest('[data-inline-field="product_image"]');
   if (!imageInput) return;
