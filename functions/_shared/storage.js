@@ -286,6 +286,89 @@ function newSubmissionId() {
     : `submission_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+function randomReviewLinkCode(length = 8) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(length);
+  try { globalThis.crypto?.getRandomValues?.(bytes); } catch (_) {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(bytes).map(b => alphabet[b % alphabet.length]).join('');
+}
+
+function normalizeReviewLinkCode(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+}
+
+function normalizeLinkDateTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    return beijingDateTime(d);
+  }
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw)) return raw.replace('T', ' ').slice(0, 16) + ':00';
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) return beijingDateTime(d);
+  const error = new Error('评分链接有效期格式不正确');
+  error.status = 400;
+  throw error;
+}
+
+function isReviewLinkExpired(link) {
+  const expires = String(link?.expires_at || '').replace('T', ' ').slice(0, 19);
+  if (!expires) return false;
+  return expires <= nowDateTime();
+}
+
+function parseStyleIdsJson(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return String(value).split(',').map(item => item.trim()).filter(Boolean);
+  }
+}
+
+function attachReviewLinkStatus(row) {
+  if (!row) return row;
+  const style_ids = parseStyleIdsJson(row.style_ids || row.style_ids_json);
+  return {
+    ...row,
+    style_ids,
+    style_count: style_ids.length,
+    active: Number(row.active ?? 1),
+    expired: isReviewLinkExpired(row),
+    status: row.deleted_at ? 'deleted' : Number(row.active ?? 1) !== 1 ? 'disabled' : isReviewLinkExpired(row) ? 'expired' : 'active'
+  };
+}
+
+function normalizeReviewLinkPayload(payload = {}, availableStyles = []) {
+  const availableById = new Map((availableStyles || []).filter(row => row && !row.deleted_at).map(row => [String(row.id), row]));
+  const inputIds = Array.isArray(payload.style_ids || payload.styleIds) ? (payload.style_ids || payload.styleIds).map(String) : [];
+  const style_ids = Array.from(new Set(inputIds.map(id => id.trim()).filter(id => availableById.has(id))));
+  if (!style_ids.length) {
+    const error = new Error('请至少选择一个有效款式');
+    error.status = 400;
+    throw error;
+  }
+  const expires_at = normalizeLinkDateTime(payload.expires_at || payload.expiresAt);
+  if (expires_at <= nowDateTime()) {
+    const error = new Error('有效期必须晚于当前时间');
+    error.status = 400;
+    throw error;
+  }
+  return {
+    name: String(payload.name || '').trim().slice(0, 80) || `评分链接-${style_ids.length}款`,
+    style_ids,
+    style_ids_json: JSON.stringify(style_ids),
+    expires_at,
+    active: payload.active === false || payload.active === 0 || payload.active === '0' ? 0 : 1,
+    remark: String(payload.remark || '').trim().slice(0, 200)
+  };
+}
+
+
 function normalizeDriver(env = {}) {
   const configured = String(env.STORAGE_DRIVER || env.DATA_DRIVER || '').trim().toLowerCase();
   if (configured) return configured;
@@ -488,6 +571,7 @@ function sanitizeDraftPayload(payload = {}, env = {}) {
     style_ids: Array.isArray(payload.style_ids || payload.styleIds) ? (payload.style_ids || payload.styleIds).map(String) : [],
     score_field_ids: Array.isArray(payload.score_field_ids || payload.scoreFieldIds) ? (payload.score_field_ids || payload.scoreFieldIds).map(String) : [],
     updated_at: new Date().toISOString(),
+    review_link_code: normalizeReviewLinkCode(payload.review_link_code || payload.reviewLinkCode || ''),
     expires_at: `${draft_date}T23:59:59+08:00`
   };
 }
@@ -615,6 +699,19 @@ function createD1Storage(env) {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `).run();
+    await DB().prepare(`
+      CREATE TABLE IF NOT EXISTS review_links (
+        code TEXT PRIMARY KEY,
+        name TEXT,
+        style_ids_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        remark TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
       )
     `).run();
   }
@@ -854,6 +951,47 @@ function createD1Storage(env) {
       return normalized;
     },
 
+    async listReviewLinks() {
+      await ensureTables();
+      const { results } = await DB().prepare('SELECT * FROM review_links WHERE deleted_at IS NULL ORDER BY created_at DESC').all();
+      return (results || []).map(row => attachReviewLinkStatus({ ...row, style_ids: parseStyleIdsJson(row.style_ids_json) }));
+    },
+
+    async getReviewLink(code) {
+      await ensureTables();
+      const cleanCode = normalizeReviewLinkCode(code);
+      if (!cleanCode) return null;
+      const row = await DB().prepare('SELECT * FROM review_links WHERE code = ? AND deleted_at IS NULL').bind(cleanCode).first();
+      return row ? attachReviewLinkStatus({ ...row, style_ids: parseStyleIdsJson(row.style_ids_json) }) : null;
+    },
+
+    async createReviewLink(payload) {
+      await ensureTables();
+      const styles = await this.listStyles({ activeOnly: true });
+      const data = normalizeReviewLinkPayload(payload, styles);
+      let code = normalizeReviewLinkCode(payload.code);
+      for (let i = 0; i < 12 && !code; i += 1) {
+        const candidate = randomReviewLinkCode(8);
+        const existing = await this.getReviewLink(candidate);
+        if (!existing) code = candidate;
+      }
+      if (!code) throw new Error('生成评分链接失败，请重试');
+      await DB().prepare(`
+        INSERT INTO review_links (code, name, style_ids_json, expires_at, active, remark, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `).bind(code, data.name, data.style_ids_json, data.expires_at, data.active, data.remark).run();
+      return this.getReviewLink(code);
+    },
+
+    async deleteReviewLink(code) {
+      await ensureTables();
+      const cleanCode = normalizeReviewLinkCode(code);
+      const old = await this.getReviewLink(cleanCode);
+      if (!old) { const error = new Error('评分链接不存在'); error.status = 404; throw error; }
+      await DB().prepare("UPDATE review_links SET deleted_at = datetime('now'), active = 0, updated_at = datetime('now') WHERE code = ? AND deleted_at IS NULL").bind(cleanCode).run();
+      return true;
+    },
+
     async getImageSettings() {
       const value = await getSetting('image_storage_settings', null);
       return normalizeImageSettings(value || {}, imageSettingsFromEnv(env));
@@ -878,8 +1016,9 @@ function createKVStorage(env) {
   const keyStyle = (id) => key(`style:${id}`);
   const keyScore = (id) => key(`score:${id}`);
   const keyScoreHistory = (id) => key(`score-history:${id}`);
-  const keyDraft = (reviewer, date = dateInTimezone(env)) => key(`draft:${date}:${hashText(normalizeDraftReviewer(reviewer))}`);
+  const keyDraft = (reviewer, date = dateInTimezone(env), linkCode = '') => key(`draft:${date}:${hashText(normalizeDraftReviewer(reviewer))}:${hashText(normalizeReviewLinkCode(linkCode) || 'all')}`);
   const keySubmissionDay = (reviewer, date = beijingDate()) => key(`submission-day:${date}:${hashText(normalizeReviewerName(reviewer))}`);
+  const keyReviewLink = (code) => key(`review-link:${normalizeReviewLinkCode(code)}`);
 
   async function getJson(k, fallback) {
     const value = await kv.get(k, { type: 'json' });
@@ -1118,24 +1257,58 @@ function createKVStorage(env) {
     async setGradeRules(rules) { const s = await getSettings(); s.score_grade_rules = normalizeGradeRules(rules); await setSettings(s); return s.score_grade_rules; },
     async getScoreFields() { return getScoreFields(); },
     async setScoreFields(fields) { const s = await getSettings(); s.score_fields = normalizeScoreFields(fields, normalizeScoreTypes(s.score_types || DEFAULT_SCORE_TYPES)); await setSettings(s); return s.score_fields; },
-    async getPublicDraft(reviewer) {
+    async listReviewLinks() {
+      const ids = await getIndex('review-links');
+      const rows = (await Promise.all(ids.map(id => getJson(keyReviewLink(id), null)))).filter(row => row && !row.deleted_at);
+      return rows.map(attachReviewLinkStatus).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    },
+    async getReviewLink(code) {
+      const cleanCode = normalizeReviewLinkCode(code);
+      if (!cleanCode) return null;
+      const row = await getJson(keyReviewLink(cleanCode), null);
+      return row && !row.deleted_at ? attachReviewLinkStatus(row) : null;
+    },
+    async createReviewLink(payload) {
+      const activeStyles = await this.listStyles({ activeOnly: true });
+      const data = normalizeReviewLinkPayload(payload, activeStyles);
+      let code = normalizeReviewLinkCode(payload.code);
+      for (let i = 0; i < 12 && !code; i += 1) {
+        const candidate = randomReviewLinkCode(8);
+        const existing = await this.getReviewLink(candidate);
+        if (!existing) code = candidate;
+      }
+      if (!code) throw new Error('生成评分链接失败，请重试');
+      const row = { code, ...data, created_at: now(), updated_at: now(), deleted_at: null };
+      await putJson(keyReviewLink(code), row);
+      const ids = await getIndex('review-links');
+      await setIndex('review-links', [...ids, code]);
+      return attachReviewLinkStatus(row);
+    },
+    async deleteReviewLink(code) {
+      const cleanCode = normalizeReviewLinkCode(code);
+      const old = await this.getReviewLink(cleanCode);
+      if (!old) { const error = new Error('评分链接不存在'); error.status = 404; throw error; }
+      await putJson(keyReviewLink(cleanCode), { ...old, active: 0, deleted_at: now(), updated_at: now() });
+      return true;
+    },
+    async getPublicDraft(reviewer, linkCode = '') {
       const name = normalizeDraftReviewer(reviewer);
       if (!name) return null;
       const todayKey = dateInTimezone(env);
-      const draft = await getJson(keyDraft(name, todayKey), null);
+      const draft = await getJson(keyDraft(name, todayKey, linkCode), null);
       if (!draft || draft.draft_date !== todayKey) return null;
       return draft;
     },
     async savePublicDraft(payload) {
       const draft = sanitizeDraftPayload({ ...payload, draft_date: dateInTimezone(env) }, env);
       const ttl = secondsUntilNextLocalDay(env);
-      await putJson(keyDraft(draft.reviewer, draft.draft_date), draft, { expirationTtl: ttl });
+      await putJson(keyDraft(draft.reviewer, draft.draft_date, draft.review_link_code), draft, { expirationTtl: ttl });
       return draft;
     },
-    async deletePublicDraft(reviewer) {
+    async deletePublicDraft(reviewer, linkCode = '') {
       const name = normalizeDraftReviewer(reviewer);
       if (!name) return true;
-      const k = keyDraft(name, dateInTimezone(env));
+      const k = keyDraft(name, dateInTimezone(env), linkCode);
       if (typeof kv.delete === 'function') await kv.delete(k);
       else await putJson(k, { deleted: true, draft_date: dateInTimezone(env), reviewer: name, updated_at: now() }, { expirationTtl: 60 });
       return true;

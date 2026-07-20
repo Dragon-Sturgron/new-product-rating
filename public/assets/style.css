@@ -1587,3 +1587,89 @@ button.disabled {
   .import-actions { grid-template-columns: 1fr; }
   .import-actions #styleImportTemplateBtn { margin-right: 0; }
 }
+
+/* 评分链接与款式勾选 */
+.select-col { width: 64px; text-align: center; }
+.select-col input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+.link-table { min-width: 960px; }
+.link-url-cell code {
+  display: inline-block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  background: #f1f5f9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 8px;
+  color: #334155;
+}
+.link-remark {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.4;
+}
+.review-link-dialog { max-width: 720px; }
+.review-link-dialog-body { min-width: min(560px, calc(100vw - 120px)); }
+.review-link-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.review-link-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.review-link-form-grid input,
+.review-link-form-grid textarea {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  outline: none;
+  background: #fff;
+}
+.review-link-form-grid input:focus,
+.review-link-form-grid textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.review-link-form-grid .wide { grid-column: 1 / -1; }
+.selected-style-preview {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.selected-style-preview span {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e0ecff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+.selected-style-preview em { color: var(--muted); font-style: normal; }
+@media (max-width: 680px) {
+  .review-link-form-grid { grid-template-columns: 1fr; }
+  .review-link-dialog-body { min-width: 0; }
+  .link-url-cell code { max-width: 220px; }
+}

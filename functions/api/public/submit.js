@@ -17,6 +17,15 @@ function sameReviewer(a, b) {
   return String(a || '').trim().replace(/\s+/g, ' ') === String(b || '').trim().replace(/\s+/g, ' ');
 }
 
+function normalizeLinkCode(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+}
+
+function linkExpired(link) {
+  const expires = String(link?.expires_at || '').replace('T', ' ').slice(0, 19);
+  return !!expires && expires <= beijingDateTime();
+}
+
 async function getDailySubmission(storage, reviewer, reviewDate) {
   if (typeof storage.getDailySubmission === 'function') {
     const row = await storage.getDailySubmission(reviewer, reviewDate);
@@ -42,6 +51,21 @@ export async function onRequestPost({ request, env }) {
     const reviewer = String(payload.reviewer || list[0]?.reviewer || '').trim();
     if (!reviewer) return json({ ok: false, message: '评分人姓名不能为空' }, 400);
 
+    const reviewLinkCode = normalizeLinkCode(payload.review_link_code || payload.reviewLinkCode || '');
+    if (reviewLinkCode) {
+      if (typeof storage.getReviewLink !== 'function') return json({ ok: false, message: '当前存储暂不支持评分链接' }, 400);
+      const link = await storage.getReviewLink(reviewLinkCode);
+      if (!link || link.deleted_at || Number(link.active ?? 1) !== 1) {
+        return json({ ok: false, code: 'LINK_NOT_FOUND', message: '该评分链接不存在或已被删除，请联系管理员重新生成。' }, 404);
+      }
+      if (linkExpired(link)) {
+        return json({ ok: false, code: 'LINK_EXPIRED', message: '评分链接已过期，无法提交。' }, 410);
+      }
+      const allowed = new Set((link.style_ids || []).map(String));
+      const forbidden = list.find(item => !allowed.has(String(item.style_id || '')));
+      if (forbidden) return json({ ok: false, message: '提交内容包含该评分链接不允许评分的款式' }, 403);
+    }
+
     const review_date = beijingDate();
     const submitted_at = beijingDateTime();
 
@@ -65,7 +89,8 @@ export async function onRequestPost({ request, env }) {
       reviewer,
       review_date: item.review_date || review_date,
       submission_id,
-      submitted_at
+      submitted_at,
+      review_link_code: reviewLinkCode
     }, scoreFields, gradeRules));
 
     const scores = typeof storage.createScoresBatch === 'function'
@@ -77,7 +102,7 @@ export async function onRequestPost({ request, env }) {
       }
     }
     if (typeof storage.deletePublicDraft === 'function') {
-      try { await storage.deletePublicDraft(reviewer); } catch (_) {}
+      try { await storage.deletePublicDraft(reviewer, reviewLinkCode); } catch (_) {}
     }
     return json({ ok: true, submission_id, submitted_at, scores }, 201);
   } catch (e) {

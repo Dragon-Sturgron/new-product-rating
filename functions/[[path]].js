@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260720-export-xlsx-clear-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260720-review-link-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -58,6 +58,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
       <nav class="view-tabs no-print" aria-label="功能切换">
         <button class="tab active" type="button" data-target="styleSection">款式配置</button>
         <button class="tab" type="button" data-target="scoreSection">评分结果</button>
+        <button class="tab" type="button" data-target="linkSection">评分链接</button>
         <button class="tab" type="button" data-target="settingsSection">设置</button>
       </nav>
 
@@ -202,14 +203,34 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             <input name="search" placeholder="搜索款式、季节、备注" />
             <button class="primary" type="submit">查询</button>
             <button class="ghost" type="button" id="clearStyleSearchBtn">重置</button>
+            <button class="primary-light" type="button" id="generateReviewLinkBtn">生成评分链接</button>
             <button class="danger-light" type="button" id="deleteAllStylesBtn">全部删除</button>
           </form>
         </div>
         <div class="mobile-help no-print">手机端列表可左右滑动查看完整字段。</div>
         <div class="table-wrap">
           <table class="review-table style-table">
-            <thead><tr><th>产品图</th><th>款式编码</th><th>季节</th><th>基本售价</th><th>状态</th><th>备注</th><th>创建时间</th><th class="no-print">操作</th></tr></thead>
+            <thead><tr><th class="no-print select-col">选择</th><th>产品图</th><th>款式编码</th><th>季节</th><th>基本售价</th><th>状态</th><th>备注</th><th>创建时间</th><th class="no-print">操作</th></tr></thead>
             <tbody id="stylesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="linkSection" class="card list-card hidden">
+        <div class="section-title search-title">
+          <div>
+            <h2>评分链接管理</h2>
+            <p class="tip">在“已配置款式”勾选款式后生成独立评分链接；链接到期后无法访问和提交，后台记录仍可手动删除。</p>
+          </div>
+          <div class="form-actions">
+            <button id="refreshReviewLinksBtn" class="ghost" type="button">刷新</button>
+          </div>
+        </div>
+        <div class="mobile-help no-print">复制链接发给评分人，评分人只能看到该链接包含的款式。</div>
+        <div class="table-wrap">
+          <table class="review-table link-table">
+            <thead><tr><th>链接名称</th><th>评分链接</th><th>款式数</th><th>有效期至</th><th>状态</th><th>创建时间</th><th class="no-print">操作</th></tr></thead>
+            <tbody id="reviewLinksBody"></tbody>
           </table>
         </div>
       </section>
@@ -256,7 +277,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260720-login-refresh-v1" defer></script>
+  <script src="/assets/admin.js?v=20260720-review-link-v1" defer></script>
 </body>
 </html>`;
 }
@@ -273,6 +294,11 @@ export async function onRequest(context) {
   if (request.method === 'GET' || request.method === 'HEAD') {
     const normalizedPath = url.pathname.replace(/\/+$/, '') || '/';
     if (normalizedPath === adminPath) return responseHtml(adminHtml(adminPath, sessionIdleMinutes));
+    const isAssetLike = normalizedPath.startsWith('/assets') || normalizedPath.startsWith('/api') || /\.[a-zA-Z0-9]{1,8}$/.test(normalizedPath);
+    if (normalizedPath !== '/' && !isAssetLike) {
+      const indexUrl = new URL('/', url);
+      return env.ASSETS.fetch(new Request(indexUrl.toString(), request));
+    }
   }
   return env.ASSETS.fetch(request);
 }

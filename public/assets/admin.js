@@ -1,5 +1,5 @@
-console.info('[product-review] admin login-refresh v1 loaded');
-console.info("product-review admin version: 20260720-login-refresh-v1");
+console.info('[product-review] admin review-link v1 loaded');
+console.info("product-review admin version: 20260720-review-link-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -18,7 +18,10 @@ const stylesBody = $('#stylesBody');
 const styleSearchForm = $('#styleSearchForm');
 const scoreSearchForm = $('#scoreSearchForm');
 const deleteAllStylesBtn = $('#deleteAllStylesBtn');
+const generateReviewLinkBtn = $('#generateReviewLinkBtn');
 const deleteAllScoresBtn = $('#deleteAllScoresBtn');
+const reviewLinksBody = $('#reviewLinksBody');
+const refreshReviewLinksBtn = $('#refreshReviewLinksBtn');
 const scoresHead = $('#scoresHead');
 const scoresBody = $('#scoresBody');
 const statsGrid = $('#statsGrid');
@@ -53,6 +56,8 @@ let pendingStyleImportMeta = null;
 const STYLE_IMPORT_TEMPLATE_URL = '/assets/templates/style-import-template.xlsx';
 
 let styles = [];
+let reviewLinks = [];
+let selectedStyleIds = new Set();
 let scores = [];
 let scoreGroups = [];
 let selectedScoreGroupKey = null;
@@ -165,6 +170,42 @@ function showConfirmDialog(options = {}) {
     document.addEventListener('keydown', onKeyDown);
     window.setTimeout(() => confirmBtn.focus(), 20);
   });
+}
+
+
+function formatLocalDateTimeInput(value) {
+  const d = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function normalizeDateTimeForApi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.replace('T', ' ').slice(0, 16) + ':00';
+}
+function isReviewLinkExpired(link) {
+  if (!link || !link.expires_at) return false;
+  return String(link.expires_at).replace('T', ' ').slice(0, 19) <= new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+}
+function reviewLinkUrl(code) {
+  return `${window.location.origin}/${encodeURIComponent(String(code || '').trim())}`;
+}
+async function copyText(value) {
+  const text = String(value || '');
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  const input = document.createElement('textarea');
+  input.value = text;
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+  const ok = document.execCommand('copy');
+  input.remove();
+  return ok;
 }
 
 const defaultScoreTypes = [
@@ -615,6 +656,9 @@ function setActiveTab(targetId) {
   $$('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.target === targetId));
   $('#styleSection').classList.toggle('hidden', targetId !== 'styleSection');
   $('#scoreSection').classList.toggle('hidden', targetId !== 'scoreSection');
+  const linkSection = $('#linkSection');
+  if (linkSection) linkSection.classList.toggle('hidden', targetId !== 'linkSection');
+  if (targetId === 'linkSection') loadReviewLinks().catch(e => showMessage(e.message, 'error'));
   const settingsSection = $('#settingsSection');
   if (settingsSection) settingsSection.classList.toggle('hidden', targetId !== 'settingsSection');
 }
@@ -884,6 +928,7 @@ function renderInlineStyleRow(style) {
   const activeChecked = Number(style.active ?? 1) === 1 ? 'checked' : '';
   return `
     <tr class="style-inline-edit-row" data-style-edit-id="${escapeHtml(style.id)}">
+      <td class="no-print select-col"><input type="checkbox" data-style-select="${escapeHtml(style.id)}" ${selectedStyleIds.has(String(style.id)) ? 'checked' : ''} disabled /></td>
       <td>
         <div class="inline-image-editor">
           <div data-inline-image-preview>${renderStylePhoto(style.product_image, 'photo inline-photo')}</div>
@@ -956,7 +1001,7 @@ async function commitPendingInlineImageIfNeeded(row) {
 function renderStyles() {
   renderStats();
   if (!styles.length) {
-    stylesBody.innerHTML = '<tr><td class="empty" colspan="8">暂无款式，请先在后台新增需要评分的款式。</td></tr>';
+    stylesBody.innerHTML = '<tr><td class="empty" colspan="9">暂无款式，请先在后台新增需要评分的款式。</td></tr>';
     return;
   }
   stylesBody.innerHTML = styles.map(style => {
@@ -964,6 +1009,7 @@ function renderStyles() {
     const image = renderStylePhoto(style.product_image);
     return `
       <tr>
+        <td class="no-print select-col"><input type="checkbox" data-style-select="${escapeHtml(style.id)}" ${selectedStyleIds.has(String(style.id)) ? 'checked' : ''} /></td>
         <td>${image}</td>
         <td><strong>${escapeHtml(style.style_code)}</strong></td>
         <td>${escapeHtml(style.season || '')}</td>
@@ -1396,6 +1442,113 @@ function ensureStyleImportControls() {
   deleteAllStylesBtn.insertAdjacentElement('beforebegin', importBtn);
   importBtn.addEventListener('click', openStyleImportDialog);
 }
+
+function renderReviewLinks() {
+  if (!reviewLinksBody) return;
+  if (!reviewLinks.length) {
+    reviewLinksBody.innerHTML = '<tr><td class="empty" colspan="7">暂无评分链接。请在“已配置款式”勾选款式后生成。</td></tr>';
+    return;
+  }
+  reviewLinksBody.innerHTML = reviewLinks.map(link => {
+    const expired = Boolean(link.expired) || isReviewLinkExpired(link);
+    const enabled = Number(link.active ?? 1) === 1 && !link.deleted_at;
+    const status = !enabled ? '<span class="status-off">已停用</span>' : expired ? '<span class="status-off">已过期</span>' : '<strong class="status-on">有效</strong>';
+    const url = reviewLinkUrl(link.code);
+    return `
+      <tr>
+        <td><strong>${escapeHtml(link.name || link.code)}</strong>${link.remark ? `<small class="link-remark">${escapeHtml(link.remark)}</small>` : ''}</td>
+        <td class="link-url-cell"><code>${escapeHtml(url)}</code></td>
+        <td>${Array.isArray(link.style_ids) ? link.style_ids.length : Number(link.style_count || 0)}</td>
+        <td>${escapeHtml(link.expires_at || '-')}</td>
+        <td>${status}</td>
+        <td>${escapeHtml(link.created_at || '')}</td>
+        <td class="no-print"><div class="actions">
+          <button class="ghost" type="button" data-link-action="copy" data-code="${escapeHtml(link.code)}">复制</button>
+          <button class="ghost" type="button" data-link-action="open" data-code="${escapeHtml(link.code)}">打开</button>
+          <button class="danger-light" type="button" data-link-action="delete" data-code="${escapeHtml(link.code)}">删除</button>
+        </div></td>
+      </tr>`;
+  }).join('');
+}
+async function loadReviewLinks() {
+  if (!reviewLinksBody) return;
+  const data = await requestJson('/api/review-links');
+  reviewLinks = data.links || [];
+  renderReviewLinks();
+}
+function selectedStyleRows() {
+  const ids = new Set(Array.from(selectedStyleIds).map(String));
+  return styles.filter(row => ids.has(String(row.id)));
+}
+function showGenerateReviewLinkDialog() {
+  const selected = selectedStyleRows();
+  if (!selected.length) {
+    showMessage('请先在“已配置款式”左侧勾选需要评分的款式。', 'error');
+    return;
+  }
+  const defaultName = `评分链接-${selected.length}款-${new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[/:\s]/g, '')}`;
+  const host = ensureDialogHost();
+  host.innerHTML = `
+    <div class="modal-backdrop" data-link-backdrop>
+      <div class="confirm-dialog review-link-dialog" role="dialog" aria-modal="true" aria-labelledby="reviewLinkDialogTitle">
+        <div class="confirm-icon info">链</div>
+        <div class="confirm-body review-link-dialog-body">
+          <h3 id="reviewLinkDialogTitle">生成评分链接</h3>
+          <p>已选择 ${selected.length} 个款式。生成后评分人只能看到这些款式。</p>
+          <div class="review-link-form-grid">
+            <label>链接名称<input id="reviewLinkNameInput" value="${escapeHtml(defaultName)}" placeholder="例如 张三评分 / 第一批评分" /></label>
+            <label>有效期至<input id="reviewLinkExpiresInput" type="datetime-local" value="${escapeHtml(formatLocalDateTimeInput())}" /></label>
+            <label class="wide">备注<textarea id="reviewLinkRemarkInput" rows="2" placeholder="可选，例如发给谁、用途说明"></textarea></label>
+          </div>
+          <div class="selected-style-preview">
+            <strong>包含款式：</strong>
+            ${selected.slice(0, 12).map(item => `<span>${escapeHtml(item.style_code || item.id)}</span>`).join('')}
+            ${selected.length > 12 ? `<em>等 ${selected.length} 款</em>` : ''}
+          </div>
+        </div>
+        <div class="confirm-actions">
+          <button class="ghost" type="button" data-link-cancel>取消</button>
+          <button class="primary" type="button" data-link-confirm>确定生成</button>
+        </div>
+      </div>
+    </div>`;
+  const backdrop = host.querySelector('[data-link-backdrop]');
+  const cancelBtn = host.querySelector('[data-link-cancel]');
+  const confirmBtn = host.querySelector('[data-link-confirm]');
+  const close = () => { document.removeEventListener('keydown', onKeyDown); host.innerHTML = ''; };
+  const onKeyDown = (event) => { if (event.key === 'Escape') close(); };
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+  cancelBtn.addEventListener('click', close);
+  confirmBtn.addEventListener('click', async () => {
+    const name = host.querySelector('#reviewLinkNameInput')?.value?.trim() || defaultName;
+    const expires = normalizeDateTimeForApi(host.querySelector('#reviewLinkExpiresInput')?.value || '');
+    const remark = host.querySelector('#reviewLinkRemarkInput')?.value?.trim() || '';
+    if (!expires) { showMessage('请设置评分链接有效期。', 'error'); return; }
+    setButtonBusy(confirmBtn, true, '生成中...');
+    try {
+      const data = await requestJson('/api/review-links', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ name, expires_at: expires, remark, style_ids: selected.map(row => row.id) })
+      });
+      const url = reviewLinkUrl(data.link?.code);
+      close();
+      selectedStyleIds = new Set();
+      renderStyles();
+      await loadReviewLinks();
+      await copyText(url).catch(() => false);
+      showMessage(`评分链接已生成，并已尝试复制：${url}`);
+      setActiveTab('linkSection');
+    } catch (e) {
+      showMessage(e.message || '生成评分链接失败', 'error');
+    } finally {
+      setButtonBusy(confirmBtn, false);
+    }
+  });
+  document.addEventListener('keydown', onKeyDown);
+  window.setTimeout(() => host.querySelector('#reviewLinkNameInput')?.focus(), 20);
+}
+
 async function loadScores() {
   const params = new URLSearchParams(new FormData(scoreSearchForm));
   if (exportBtn) exportBtn.href = params.toString() ? `/api/export?${params}` : '/api/export';
@@ -1838,6 +1991,13 @@ stylesBody.addEventListener('click', async (event) => {
   }
 });
 stylesBody.addEventListener('change', async (event) => {
+  const selectInput = event.target.closest('[data-style-select]');
+  if (selectInput && !selectInput.disabled) {
+    const id = String(selectInput.dataset.styleSelect || '');
+    if (selectInput.checked) selectedStyleIds.add(id);
+    else selectedStyleIds.delete(id);
+    return;
+  }
   const fileInput = event.target.closest('[data-inline-image-file]');
   if (!fileInput) return;
   const row = fileInput.closest('[data-style-edit-id]');
@@ -1857,6 +2017,54 @@ stylesBody.addEventListener('input', (event) => {
   if (row) { clearInlineLocalImagePreview(row); updateInlineImagePreview(row, imageInput.value.trim()); }
 });
 
+
+
+if (generateReviewLinkBtn) {
+  generateReviewLinkBtn.addEventListener('click', showGenerateReviewLinkDialog);
+}
+if (refreshReviewLinksBtn) {
+  refreshReviewLinksBtn.addEventListener('click', async (event) => {
+    setButtonBusy(event.currentTarget, true, '刷新中...');
+    try { await loadReviewLinks(); } catch (e) { showMessage(e.message || '刷新评分链接失败', 'error'); }
+    finally { setButtonBusy(event.currentTarget, false); }
+  });
+}
+if (reviewLinksBody) {
+  reviewLinksBody.addEventListener('click', async (event) => {
+    const btn = event.target.closest('button[data-link-action]');
+    if (!btn) return;
+    const code = String(btn.dataset.code || '');
+    const link = reviewLinks.find(item => String(item.code) === code);
+    const url = reviewLinkUrl(code);
+    if (btn.dataset.linkAction === 'copy') {
+      try { await copyText(url); showMessage('评分链接已复制'); } catch (e) { showMessage('复制失败，请手动复制链接', 'error'); }
+      return;
+    }
+    if (btn.dataset.linkAction === 'open') {
+      window.open(url, '_blank', 'noopener');
+      return;
+    }
+    if (btn.dataset.linkAction === 'delete') {
+      const confirmed = await showConfirmDialog({
+        title: '删除评分链接？',
+        message: `确定删除评分链接“${link?.name || code}”吗？`,
+        details: ['删除后该链接将无法继续访问。', '已经提交的评分结果不会被删除。'],
+        confirmText: '确认删除',
+        cancelText: '取消',
+        danger: true,
+        icon: '删'
+      });
+      if (!confirmed) return;
+      setButtonBusy(btn, true, '删除中...');
+      try {
+        await requestJson(`/api/review-links/${encodeURIComponent(code)}`, { method: 'DELETE' });
+        showMessage('评分链接已删除');
+        await loadReviewLinks();
+      } catch (e) { showMessage(e.message || '删除评分链接失败', 'error'); }
+      finally { setButtonBusy(btn, false); }
+    }
+  });
+}
 
 if (clearAllDataBtn) {
   clearAllDataBtn.addEventListener('click', async (event) => {
@@ -1881,7 +2089,7 @@ if (clearAllDataBtn) {
       const data = await requestJson('/api/data/clear-all', { method: 'DELETE' });
       showMessage(`已清空：款式 ${data.deleted_style_count || 0} 个，评分记录 ${data.deleted_score_count || 0} 条，图片清理 ${data.image_deleted_count || 0} 张。`);
       selectedScoreGroupKey = null;
-      await Promise.all([loadStyles(), loadScores()]);
+      await Promise.all([loadStyles(), loadScores(), loadReviewLinks()]);
     } catch (e) {
       showMessage(e.message || '清空全部数据失败', 'error');
     } finally {
@@ -2040,7 +2248,7 @@ async function checkLogin() {
     markSessionActivityLocal();
     resetStyleForm();
     await loadSettings();
-    await Promise.all([loadStyles(), loadScores()]);
+    await Promise.all([loadStyles(), loadScores(), loadReviewLinks()]);
   } catch { showLogin(); }
 }
 checkLogin();

@@ -4,18 +4,21 @@ function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
-function reviewerFromRequest(request) {
+function requestIdentity(request) {
   const url = new URL(request.url);
-  return String(url.searchParams.get('reviewer') || '').trim();
+  return {
+    reviewer: String(url.searchParams.get('reviewer') || '').trim(),
+    link_code: String(url.searchParams.get('link_code') || url.searchParams.get('review_link_code') || '').trim()
+  };
 }
 
 export async function onRequestGet({ request, env }) {
   try {
-    const reviewer = reviewerFromRequest(request);
+    const { reviewer, link_code } = requestIdentity(request);
     if (!reviewer) return json({ ok: false, message: '评分人姓名不能为空' }, 400);
     const storage = getStorage(env);
     if (typeof storage.getPublicDraft !== 'function') return json({ ok: true, draft: null });
-    const draft = await storage.getPublicDraft(reviewer);
+    const draft = await storage.getPublicDraft(reviewer, link_code);
     return json({ ok: true, draft: draft || null });
   } catch (e) {
     return json({ ok: false, message: e.message || '读取评分草稿失败' }, e.status || 400);
@@ -40,10 +43,10 @@ export async function onRequestPost(context) {
 
 export async function onRequestDelete({ request, env }) {
   try {
-    const reviewer = reviewerFromRequest(request);
+    const { reviewer, link_code } = requestIdentity(request);
     if (!reviewer) return json({ ok: false, message: '评分人姓名不能为空' }, 400);
     const storage = getStorage(env);
-    if (typeof storage.deletePublicDraft === 'function') await storage.deletePublicDraft(reviewer);
+    if (typeof storage.deletePublicDraft === 'function') await storage.deletePublicDraft(reviewer, link_code);
     return json({ ok: true });
   } catch (e) {
     return json({ ok: false, message: e.message || '删除评分草稿失败' }, e.status || 400);

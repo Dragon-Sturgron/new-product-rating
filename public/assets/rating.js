@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260718-display-url-normalize-v1");
+console.info("product-review rating version: 20260720-review-link-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -47,6 +47,15 @@ const nameGradeRuleIntro = $('#nameGradeRuleIntro');
 let scoreTypes = defaultScoreTypes.map(item => ({ ...item }));
 let gradeRules = null;
 let currentImageSettings = { image_key_prefix: 'review-images', public_image_base_url: '', public_image_path_prefix: '', s3_endpoint: '', s3_bucket: '' };
+let reviewLinkCode = (() => {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  if (parts.length !== 1) return '';
+  const code = parts[0];
+  if (/^(assets|api|admin)$/i.test(code) || code.includes('.')) return '';
+  return code;
+})();
+let reviewLinkInfo = null;
+let reviewLinkUnavailable = false;
 let scoreFields = defaultScoreFields.map(item => ({ ...item }));
 let reviewer = '';
 let styles = [];
@@ -71,7 +80,7 @@ function safeDraftName(name) {
 }
 
 function draftStoragePrefix() {
-  return `new-product-rating:draft:${today()}:`;
+  return `new-product-rating:draft:${today()}:${reviewLinkCode ? `link-${safeDraftName(reviewLinkCode)}:` : 'all:'}`;
 }
 
 function draftStorageKey(name = reviewer) {
@@ -106,6 +115,7 @@ function buildDraftPayload() {
     reviewer,
     current_index: currentIndex,
     updated_at: new Date().toISOString(),
+    review_link_code: reviewLinkCode,
     style_ids: styles.map(item => item.id),
     score_field_ids: scoreFields.map(item => item.id),
     drafts: drafts.map(serializeDraft)
@@ -199,7 +209,7 @@ async function saveServerDraftProgress() {
 async function clearServerDraftProgress(name = reviewer) {
   if (!name) return;
   try {
-    await requestJson(`/api/public/draft?reviewer=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await requestJson(`/api/public/draft?reviewer=${encodeURIComponent(name)}${reviewLinkCode ? `&link_code=${encodeURIComponent(reviewLinkCode)}` : ''}`, { method: 'DELETE' });
   } catch (e) {
     console.warn('清理服务端评分草稿失败', e);
   }
@@ -232,7 +242,7 @@ function restoreDraftProgress(name = reviewer) {
 async function restoreServerDraftProgress(name = reviewer) {
   if (!name || !drafts.length) return false;
   try {
-    const data = await requestJson(`/api/public/draft?reviewer=${encodeURIComponent(name)}`);
+    const data = await requestJson(`/api/public/draft?reviewer=${encodeURIComponent(name)}${reviewLinkCode ? `&link_code=${encodeURIComponent(reviewLinkCode)}` : ''}`);
     if (!data.draft) return false;
     return applyDraftProgress(data.draft, name);
   } catch (e) {
@@ -458,14 +468,32 @@ function applyGradeRuleIntro() {
   if (nameGradeRuleIntro) nameGradeRuleIntro.textContent = config.description;
 }
 
+
+function publicDataUrl() {
+  return reviewLinkCode ? `/api/public/review-link/${encodeURIComponent(reviewLinkCode)}` : '/api/public/styles';
+}
+function handleReviewLinkAccessError(error) {
+  reviewLinkUnavailable = true;
+  showMessage(error?.message || '该评分链接不可用，请联系管理员重新生成。', 'error');
+  if (reviewerForm) {
+    const btn = reviewerForm.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    const input = reviewerForm.querySelector('input[name="reviewer"]');
+    if (input) input.disabled = true;
+  }
+}
+
 async function loadPublicIntro() {
   try {
-    const data = await requestJson('/api/public/styles');
+    const data = await requestJson(publicDataUrl());
+    reviewLinkInfo = data.review_link || null;
+    if (reviewLinkInfo && document.querySelector('.public-topbar h1')) document.querySelector('.public-topbar h1').textContent = reviewLinkInfo.name || '新品评审评分';
     gradeRules = normalizeGradeRules(data.grade_rules || defaultGradeRules);
     applyGradeRuleIntro();
     return true;
   } catch (e) {
     console.warn('加载前端说明文字失败，继续使用默认说明', e);
+    if (reviewLinkCode) handleReviewLinkAccessError(e);
     applyGradeRuleIntro();
     return false;
   }
@@ -554,13 +582,15 @@ async function requestJson(path, options = {}) {
 }
 
 async function loadStyles() {
-  const data = await requestJson('/api/public/styles');
+  const data = await requestJson(publicDataUrl());
+  reviewLinkInfo = data.review_link || null;
   scoreTypes = normalizeScoreTypes(data.score_types || defaultScoreTypes);
   scoreFields = normalizeScoreFields(data.score_fields || defaultScoreFields);
   gradeRules = normalizeGradeRules(data.grade_rules || defaultGradeRules);
   currentImageSettings = data.image_settings || currentImageSettings;
   applyGradeRuleIntro();
   styles = data.styles || [];
+  if (reviewLinkCode && !styles.length) throw new Error('该评分链接没有可评分款式，请联系管理员重新生成。');
   drafts = styles.map(makeDraft);
   currentIndex = 0;
   let restored = await restoreServerDraftProgress(reviewer);
@@ -756,6 +786,7 @@ async function submitCurrentAndNext() {
   try {
     const payload = {
       reviewer,
+      review_link_code: reviewLinkCode,
       review_date: today(),
       scores: drafts.map((item, index) => ({
         reviewer,
@@ -799,6 +830,7 @@ async function submitCurrentAndNext() {
 }
 reviewerForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (reviewLinkUnavailable) { showMessage('该评分链接不可用，请联系管理员重新生成。', 'error'); return; }
   reviewer = reviewerForm.elements.reviewer.value.trim();
   if (!reviewer) {
     showMessage('请先输入评分人姓名', 'error');
