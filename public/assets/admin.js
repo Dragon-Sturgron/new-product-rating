@@ -1,5 +1,5 @@
-console.info('[product-review] admin export-xlsx-clear v1 loaded');
-console.info("product-review admin version: 20260720-export-xlsx-clear-v1");
+console.info('[product-review] admin login-refresh v1 loaded');
+console.info("product-review admin version: 20260720-login-refresh-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -497,6 +497,15 @@ function showApp() {
   loginView.classList.add('hidden');
   appView.classList.remove('hidden');
   startSessionIdleGuard();
+}
+function reloadAdminAfterLogin() {
+  const url = new URL(window.location.href);
+  // 登录后按“重新打开后台”的状态进入，避免回到登录前停留的标签页、弹框或未完成表单。
+  url.hash = '';
+  showMessage('登录成功，正在刷新后台...', 'success');
+  window.setTimeout(() => {
+    window.location.replace(url.toString());
+  }, 120);
 }
 function startSessionIdleGuard() {
   if (sessionGuardStarted) { resetSessionIdleTimer(false); return; }
@@ -1490,9 +1499,9 @@ loginForm.addEventListener('submit', async (event) => {
     });
     loginForm.reset();
     setClientSessionMarker();
-    showApp();
-    await loadSettings();
-    await Promise.all([loadStyles(), loadScores()]);
+    markSessionActivityLocal();
+    reloadAdminAfterLogin();
+    return;
   } catch (e) { showMessage(e.message, 'error'); }
   finally { setButtonBusy(submitBtn, false); }
 });
