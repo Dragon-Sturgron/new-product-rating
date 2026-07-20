@@ -46,18 +46,26 @@ function columnName(index) {
   return name;
 }
 
+const REMARK_COLUMN_INDEX = 9;
+const EXPORT_COLUMN_WIDTHS = [8, 10, 7, 8, 8, 8, 8, 8, 12, 14, 10, 10, 10, 9, 12];
+
 function worksheetXml(rows) {
   const sheetData = rows.map((row, rowIndex) => {
     const r = rowIndex + 1;
+    const remarkText = String(row?.[REMARK_COLUMN_INDEX] ?? '');
+    const rowAttr = rowIndex === 0
+      ? `r="${r}" ht="34" customHeight="1"`
+      : (remarkText ? `r="${r}" ht="42" customHeight="1"` : `r="${r}"`);
     const cells = row.map((value, colIndex) => {
       const ref = `${columnName(colIndex)}${r}`;
       const text = xmlEscape(value);
-      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${text}</t></is></c>`;
+      const styleIndex = rowIndex === 0 ? 1 : (colIndex === REMARK_COLUMN_INDEX ? 2 : 0);
+      return `<c r="${ref}" t="inlineStr" s="${styleIndex}"><is><t xml:space="preserve">${text}</t></is></c>`;
     }).join('');
-    return `<row r="${r}">${cells}</row>`;
+    return `<row ${rowAttr}>${cells}</row>`;
   }).join('');
   const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
-  const cols = colCount ? `<cols>${Array.from({ length: colCount }, (_, i) => `<col min="${i + 1}" max="${i + 1}" width="${i < 4 ? 18 : 16}" customWidth="1"/>`).join('')}</cols>` : '';
+  const cols = colCount ? `<cols>${Array.from({ length: colCount }, (_, i) => `<col min="${i + 1}" max="${i + 1}" width="${EXPORT_COLUMN_WIDTHS[i] || 8}" customWidth="1"/>`).join('')}</cols>` : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
@@ -102,11 +110,17 @@ function contentTypesXml() {
 function stylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="1"><font><sz val="11"/><name val="Microsoft YaHei"/></font></fonts>
+  <fonts count="2">
+    <font><sz val="11"/><name val="Microsoft YaHei"/></font>
+    <font><b/><sz val="11"/><name val="Microsoft YaHei"/></font>
+  </fonts>
   <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+  <cellXfs count="3">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
   </cellXfs>
 </styleSheet>`;
 }
