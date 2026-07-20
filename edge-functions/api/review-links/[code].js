@@ -16,6 +16,20 @@ export async function onRequestGet({ params, env }) {
   }
 }
 
+
+
+export async function onRequestPut({ params, request, env }) {
+  try {
+    const payload = await request.json().catch(() => ({}));
+    const storage = getStorage(env);
+    if (typeof storage.updateReviewLink !== 'function') throw new Error('当前存储暂不支持评分链接');
+    const link = await storage.updateReviewLink(params.code, payload);
+    return json({ ok: true, link });
+  } catch (e) {
+    return json({ ok: false, message: e.message || '更新评分链接失败' }, e.status || 400);
+  }
+}
+
 export async function onRequestDelete({ params, env }) {
   try {
     const storage = getStorage(env);

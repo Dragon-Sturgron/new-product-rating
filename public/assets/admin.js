@@ -1482,7 +1482,7 @@ function renderReviewLinks() {
         <td>${escapeHtml(link.created_at || '')}</td>
         <td class="no-print"><div class="actions">
           <button class="ghost" type="button" data-link-action="copy" data-code="${escapeHtml(link.code)}">复制</button>
-          <button class="ghost" type="button" data-link-action="open" data-code="${escapeHtml(link.code)}">打开</button>
+          <button class="ghost" type="button" data-link-action="edit" data-code="${escapeHtml(link.code)}">修改</button>
           <button class="danger-light" type="button" data-link-action="delete" data-code="${escapeHtml(link.code)}">删除</button>
         </div></td>
       </tr>`;
@@ -1498,6 +1498,95 @@ function selectedStyleRows() {
   const ids = new Set(Array.from(selectedStyleIds).map(String));
   return styles.filter(row => ids.has(String(row.id)));
 }
+
+function availableReviewLinkStyles() {
+  return styles.filter(row => !row.deleted_at && Number(row.active ?? 1) === 1);
+}
+function renderReviewLinkStyleSelector(selectedIds = [], options = {}) {
+  const picked = new Set((selectedIds || []).map(String));
+  const rows = availableReviewLinkStyles();
+  if (!rows.length) return '<div class="review-link-style-empty">暂无可选的启用款式，请先在“已配置款式”里启用款式。</div>';
+  return `<div class="review-link-style-list">${rows.map(item => `
+    <label class="review-link-style-item">
+      <input type="checkbox" data-review-link-style-id="${escapeHtml(item.id)}" ${picked.has(String(item.id)) ? 'checked' : ''} />
+      <span class="review-link-style-code">${escapeHtml(item.style_code || item.id)}</span>
+      <small>${escapeHtml(item.season || '')}${item.base_price ? ` / ${escapeHtml(formatMoney(item.base_price))}` : ''}</small>
+    </label>`).join('')}</div>`;
+}
+async function showEditReviewLinkDialog(link) {
+  if (!link) { showMessage('评分链接不存在', 'error'); return; }
+  if (!styles.length) {
+    try { await loadStyles(); } catch (e) { showMessage(e.message || '读取款式失败', 'error'); return; }
+  }
+  const host = ensureDialogHost();
+  host.innerHTML = `
+    <div class="modal-backdrop" data-link-backdrop>
+      <div class="confirm-dialog review-link-dialog" role="dialog" aria-modal="true" aria-labelledby="reviewLinkEditDialogTitle">
+        <div class="confirm-icon info">改</div>
+        <div class="confirm-body review-link-dialog-body">
+          <h3 id="reviewLinkEditDialogTitle">修改评分链接</h3>
+          <p>可以修改该评分链接包含的款式和有效期。修改后，评分人访问该链接时会按最新设置显示。</p>
+          <div class="review-link-form-grid">
+            <label>链接名称<input id="reviewLinkEditNameInput" value="${escapeHtml(link.name || '')}" placeholder="例如 张三评分 / 第一批评分" /></label>
+            <label>有效期至<input id="reviewLinkEditExpiresInput" type="datetime-local" value="${escapeHtml(formatLocalDateTimeInput(link.expires_at))}" /></label>
+            <label class="wide">备注<textarea id="reviewLinkEditRemarkInput" rows="2" placeholder="可选，例如发给谁、用途说明">${escapeHtml(link.remark || '')}</textarea></label>
+          </div>
+          <div class="review-link-style-selector-wrap">
+            <div class="review-link-style-selector-head">
+              <strong>包含款式</strong>
+              <span>至少选择 1 个启用款式，当前已选 <em id="reviewLinkStyleSelectedCount">0</em> 款</span>
+            </div>
+            ${renderReviewLinkStyleSelector(link.style_ids || [])}
+          </div>
+        </div>
+        <div class="confirm-actions">
+          <button class="ghost" type="button" data-link-cancel>取消</button>
+          <button class="primary" type="button" data-link-confirm>保存修改</button>
+        </div>
+      </div>
+    </div>`;
+  const backdrop = host.querySelector('[data-link-backdrop]');
+  const cancelBtn = host.querySelector('[data-link-cancel]');
+  const confirmBtn = host.querySelector('[data-link-confirm]');
+  const updateSelectedCount = () => {
+    const count = host.querySelectorAll('[data-review-link-style-id]:checked').length;
+    const countNode = host.querySelector('#reviewLinkStyleSelectedCount');
+    if (countNode) countNode.textContent = String(count);
+  };
+  updateSelectedCount();
+  host.addEventListener('change', (event) => {
+    if (host.innerHTML && event.target.closest('[data-review-link-style-id]')) updateSelectedCount();
+  });
+  const close = () => { document.removeEventListener('keydown', onKeyDown); host.innerHTML = ''; };
+  const onKeyDown = (event) => { if (event.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKeyDown);
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+  cancelBtn.addEventListener('click', close);
+  confirmBtn.addEventListener('click', async () => {
+    const name = host.querySelector('#reviewLinkEditNameInput')?.value?.trim() || (link.name || `评分链接-${link.code}`);
+    const expires = normalizeDateTimeForApi(host.querySelector('#reviewLinkEditExpiresInput')?.value || '');
+    const remark = host.querySelector('#reviewLinkEditRemarkInput')?.value?.trim() || '';
+    const style_ids = Array.from(host.querySelectorAll('[data-review-link-style-id]:checked')).map(input => String(input.dataset.reviewLinkStyleId || '')).filter(Boolean);
+    if (!style_ids.length) { showMessage('请至少选择一个款式。', 'error'); return; }
+    if (!expires) { showMessage('请设置评分链接有效期。', 'error'); return; }
+    setButtonBusy(confirmBtn, true, '保存中...');
+    try {
+      await requestJson(`/api/review-links/${encodeURIComponent(link.code)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ name, expires_at: expires, remark, style_ids })
+      });
+      close();
+      await loadReviewLinks();
+      showMessage('评分链接已更新');
+    } catch (e) {
+      showMessage(e.message || '更新评分链接失败', 'error');
+    } finally {
+      setButtonBusy(confirmBtn, false);
+    }
+  });
+}
+
 function showGenerateReviewLinkDialog() {
   const selected = selectedStyleRows();
   if (!selected.length) {
@@ -2073,8 +2162,8 @@ if (reviewLinksBody) {
       try { await copyText(url); showMessage('评分链接已复制'); } catch (e) { showMessage('复制失败，请手动复制链接', 'error'); }
       return;
     }
-    if (btn.dataset.linkAction === 'open') {
-      window.open(url, '_blank', 'noopener');
+    if (btn.dataset.linkAction === 'edit') {
+      await showEditReviewLinkDialog(link);
       return;
     }
     if (btn.dataset.linkAction === 'delete') {

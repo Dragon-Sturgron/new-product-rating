@@ -983,6 +983,21 @@ function createD1Storage(env) {
       return this.getReviewLink(code);
     },
 
+    async updateReviewLink(code, payload) {
+      await ensureTables();
+      const cleanCode = normalizeReviewLinkCode(code);
+      const old = await this.getReviewLink(cleanCode);
+      if (!old) { const error = new Error('评分链接不存在'); error.status = 404; throw error; }
+      const styles = await this.listStyles({ activeOnly: true });
+      const data = normalizeReviewLinkPayload({ ...old, ...payload, code: cleanCode }, styles);
+      await DB().prepare(`
+        UPDATE review_links
+        SET name = ?, style_ids_json = ?, expires_at = ?, active = ?, remark = ?, updated_at = datetime('now')
+        WHERE code = ? AND deleted_at IS NULL
+      `).bind(data.name, data.style_ids_json, data.expires_at, data.active, data.remark, cleanCode).run();
+      return this.getReviewLink(cleanCode);
+    },
+
     async deleteReviewLink(code) {
       await ensureTables();
       const cleanCode = normalizeReviewLinkCode(code);
@@ -1282,6 +1297,16 @@ function createKVStorage(env) {
       await putJson(keyReviewLink(code), row);
       const ids = await getIndex('review-links');
       await setIndex('review-links', [...ids, code]);
+      return attachReviewLinkStatus(row);
+    },
+    async updateReviewLink(code, payload) {
+      const cleanCode = normalizeReviewLinkCode(code);
+      const old = await this.getReviewLink(cleanCode);
+      if (!old) { const error = new Error('评分链接不存在'); error.status = 404; throw error; }
+      const activeStyles = await this.listStyles({ activeOnly: true });
+      const data = normalizeReviewLinkPayload({ ...old, ...payload, code: cleanCode }, activeStyles);
+      const row = { ...old, ...data, code: cleanCode, updated_at: now(), deleted_at: null };
+      await putJson(keyReviewLink(cleanCode), row);
       return attachReviewLinkStatus(row);
     },
     async deleteReviewLink(code) {
