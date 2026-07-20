@@ -223,35 +223,64 @@ export async function onRequestGet({ request, env }) {
       limit: '10000'
     });
     const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : undefined;
-    const scoreColumns = [];
-    const systemColumns = [];
-    for (const score of scores) {
-      for (const item of score.score_items || []) {
-        const key = `${scoreTypeId(item)}::${item.label}`;
-        const title = `${scoreTypeLabel(item)}-${item.label}`;
-        if (!scoreColumns.some(col => col.key === key)) scoreColumns.push({ key, title });
-      }
-      for (const system of scoreSystemSummaries(score.score_items || [], gradeRules)) {
-        if (!systemColumns.some(col => col.id === system.id)) systemColumns.push({ id: system.id, title: `${system.label}总分` });
-      }
+    const fixedScoreColumns = [
+      '价格竞争力',
+      '外观设计',
+      '工艺细节',
+      '容量收纳',
+      '背负舒适度、材质触感',
+      '设计师宣讲'
+    ];
+
+    function normalizeExportLabel(value) {
+      return String(value ?? '')
+        .trim()
+        .replace(/\s+/g, '')
+        .replace(/，/g, '、')
+        .replace(/、/g, '、');
     }
-    const headers = ['产品图', '款式编码', '季节', '基本售价', ...scoreColumns.map(col => col.title), ...systemColumns.map(col => col.title), '评分人', '评分日期', '备注', '创建时间'];
-    const rows = scores.map(score => {
-      const values = Object.fromEntries((score.score_items || []).map(item => [`${scoreTypeId(item)}::${item.label}`, item.score]));
-      const systems = Object.fromEntries(scoreSystemSummaries(score.score_items || [], gradeRules).map(item => [item.id, item.text]));
-      return [
-        score.product_image,
-        score.style_code,
-        score.season,
-        score.base_price,
-        ...scoreColumns.map(col => values[col.key] ?? ''),
-        ...systemColumns.map(col => systems[col.id] ?? ''),
-        score.reviewer,
-        score.review_date,
-        score.remark,
-        score.created_at
-      ];
-    });
+    function findScoreValue(score, label) {
+      const target = normalizeExportLabel(label);
+      const item = (score.score_items || []).find(entry => normalizeExportLabel(entry.label) === target);
+      return item ? item.score : '';
+    }
+    function findSystemTotal(score, label) {
+      const target = normalizeExportLabel(label).replace(/总分$/, '');
+      const systems = scoreSystemSummaries(score.score_items || [], gradeRules);
+      const item = systems.find(entry => normalizeExportLabel(entry.label) === target || normalizeExportLabel(entry.id) === target);
+      return item ? `${item.total}/${item.max}` : '';
+    }
+
+    const headers = [
+      '产品图',
+      '款式编码',
+      '季节',
+      '基本售价',
+      '价格竞争力',
+      '外观设计',
+      '工艺细节',
+      '容量收纳',
+      '背负舒适度、材质触感',
+      '备注',
+      '设计师宣讲',
+      '综合评分总分',
+      '独立评分总分',
+      '评分人',
+      '评分日期'
+    ];
+    const rows = scores.map(score => [
+      score.product_image,
+      score.style_code,
+      score.season,
+      score.base_price,
+      ...fixedScoreColumns.slice(0, 5).map(label => findScoreValue(score, label)),
+      score.remark,
+      findScoreValue(score, '设计师宣讲'),
+      findSystemTotal(score, '综合评分总分'),
+      findSystemTotal(score, '独立评分总分'),
+      score.reviewer,
+      score.review_date || score.created_at || ''
+    ]);
     const xlsx = buildXlsx([headers, ...rows]);
     const encodedFilename = encodeURIComponent('评分结果.xlsx');
     return new Response(xlsx, {
