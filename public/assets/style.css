@@ -1125,16 +1125,54 @@ button.disabled {
 /* 图片存储页面配置 */
 .image-settings-form {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+.image-settings-form label,
+.image-config-row label,
+.s3-settings label {
+  display: grid;
+  gap: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 900;
+}
+.image-settings-form input,
+.image-settings-form select {
+  width: 100%;
+}
+.image-driver-field {
+  max-width: 520px;
+}
+.image-config-row {
+  display: grid;
   gap: 12px;
   align-items: end;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
 }
-.image-settings-form > label {
-  grid-column: span 4;
+.image-config-row-three {
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, .75fr) minmax(180px, 1fr);
 }
-.image-settings-form > .wide,
-.image-settings-form .s3-settings {
-  grid-column: 1 / -1;
+.image-config-row-two {
+  grid-template-columns: minmax(320px, 2fr) minmax(180px, 1fr);
+}
+.image-pretty-select,
+.image-settings-form select.pretty-select {
+  min-height: 44px;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background-color: #f8fbff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 8px 16px rgba(37,99,235,.06);
+}
+.image-pretty-select:hover,
+.image-settings-form select.pretty-select:hover {
+  border-color: #93c5fd;
+  background-color: #ffffff;
 }
 .s3-settings {
   display: grid;
@@ -1142,22 +1180,27 @@ button.disabled {
   gap: 12px;
   padding: 12px;
   border: 1px dashed #cbd5e1;
-  border-radius: 14px;
+  border-radius: 16px;
   background: #f8fafc;
 }
 .s3-settings > label { grid-column: span 4; }
 .s3-settings > .switch-label { grid-column: span 4; }
+.s3-dependent.hidden,
+.s3-settings.hidden { display: none !important; }
 @media (max-width: 900px) {
-  .image-settings-form > label,
+  .image-config-row-three,
+  .image-config-row-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .image-config-row-two > label:first-child { grid-column: 1 / -1; }
   .s3-settings > label,
   .s3-settings > .switch-label { grid-column: span 6; }
 }
 @media (max-width: 640px) {
-  .image-settings-form,
+  .image-driver-field { max-width: none; }
+  .image-config-row,
+  .image-config-row-three,
+  .image-config-row-two,
   .s3-settings { grid-template-columns: 1fr; }
-  .image-settings-form > label,
-  .image-settings-form > .wide,
-  .s3-settings,
+  .image-config-row-two > label:first-child,
   .s3-settings > label,
   .s3-settings > .switch-label { grid-column: 1 / -1; }
 }

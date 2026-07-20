@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260718-import-modal-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260720-settings-layout-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -79,27 +79,31 @@ function adminHtml(adminPath, sessionIdleMinutes) {
             </div>
           </div>
           <form id="imageStorageForm" class="image-settings-form">
-            <label>图片存储方式
-              <select name="driver">
+            <label class="image-driver-field">图片存储方式
+              <select class="pretty-select image-pretty-select" name="driver">
                 <option value="url">只粘贴图片链接</option>
                 <option value="s3">国内OSS / S3兼容：七牛云、阿里云OSS、腾讯云COS</option>
                 <option value="r2">Cloudflare R2（仅 Cloudflare Pages 使用）</option>
               </select>
             </label>
-            <label class="s3-settings">国内OSS服务商
-              <select name="s3_provider">
-                <option value="custom">自定义 S3 兼容</option>
-                <option value="qiniu">七牛云 Kodo</option>
-                <option value="aliyun">阿里云 OSS</option>
-                <option value="tencent">腾讯云 COS</option>
-                <option value="minio">MinIO / 其他 S3</option>
-              </select>
-            </label>
-            <label>上传大小上限MB<input name="image_max_size_mb" type="number" min="1" max="50" step="1" placeholder="10" /></label>
-            <label>文件名前缀<input name="image_key_prefix" placeholder="review-images" /></label>
-            <label class="wide">图片公开访问域名 / CDN域名<input name="public_image_base_url" placeholder="例如 https://img.example.com；国内OSS建议配置 CDN 或公开访问域名" /></label>
-            <label>公开访问路径前缀<input name="public_image_path_prefix" placeholder="例如七牛需要 /xianglupiju 时填 xianglupiju；不需要则留空" /></label>
-            <div class="s3-settings wide">
+            <div class="image-config-row image-config-row-three">
+              <label class="s3-dependent">国内OSS服务商
+                <select class="pretty-select image-pretty-select" name="s3_provider">
+                  <option value="custom">自定义 S3 兼容</option>
+                  <option value="qiniu">七牛云 Kodo</option>
+                  <option value="aliyun">阿里云 OSS</option>
+                  <option value="tencent">腾讯云 COS</option>
+                  <option value="minio">MinIO / 其他 S3</option>
+                </select>
+              </label>
+              <label>上传大小上限MB<input name="image_max_size_mb" type="number" min="1" max="50" step="1" placeholder="10" /></label>
+              <label>文件名前缀<input name="image_key_prefix" placeholder="review-images" /></label>
+            </div>
+            <div class="image-config-row image-config-row-two">
+              <label>图片公开访问域名 / CDN域名<input name="public_image_base_url" placeholder="例如 https://img.example.com；国内OSS建议配置 CDN 或公开访问域名" /></label>
+              <label>公开访问路径前缀<input name="public_image_path_prefix" placeholder="例如七牛需要 /xianglupiju 时填 xianglupiju；不需要则留空" /></label>
+            </div>
+            <div class="s3-settings wide s3-dependent">
               <label>S3 Endpoint<input name="s3_endpoint" placeholder="例如七牛云 https://s3-cn-east-1.qiniucs.com" /></label>
               <label>Bucket / 空间名<input name="s3_bucket" placeholder="你的 Bucket 或七牛空间名" /></label>
               <label>Region / 区域<input name="s3_region" placeholder="例如 cn-east-1 / oss-cn-guangzhou" /></label>
@@ -251,7 +255,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260720-site-data-guard-v1" defer></script>
+  <script src="/assets/admin.js?v=20260720-settings-layout-v1" defer></script>
 </body>
 </html>`;
 }

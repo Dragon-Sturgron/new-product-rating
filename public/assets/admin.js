@@ -742,8 +742,8 @@ function readImageSettingsForm() {
 function toggleImageSettingsFields() {
   if (!imageStorageForm) return;
   const driver = imageStorageForm.elements.driver.value;
-  const s3Box = imageStorageForm.querySelector('.s3-settings');
-  if (s3Box) s3Box.classList.toggle('hidden', driver !== 's3');
+  const isS3 = driver === 's3';
+  imageStorageForm.querySelectorAll('.s3-dependent, .s3-settings').forEach(el => el.classList.toggle('hidden', !isS3));
 }
 
 function readScoreTypesFromEditor() {
