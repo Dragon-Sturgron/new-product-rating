@@ -1,5 +1,5 @@
-console.info('[product-review] admin site-data guard v1 loaded');
-console.info("product-review admin version: 20260720-site-data-guard-v1");
+console.info('[product-review] admin export-xlsx-clear v1 loaded');
+console.info("product-review admin version: 20260720-export-xlsx-clear-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -8,6 +8,8 @@ const appView = $('#appView');
 const loginForm = $('#loginForm');
 const loginMessage = $('#loginMessage');
 const logoutBtn = $('#logoutBtn');
+const exportBtn = $('#exportBtn');
+const clearAllDataBtn = $('#clearAllDataBtn');
 const messageBox = $('#message');
 const styleForm = $('#styleForm');
 const styleFormTitle = $('#styleFormTitle');
@@ -1387,6 +1389,7 @@ function ensureStyleImportControls() {
 }
 async function loadScores() {
   const params = new URLSearchParams(new FormData(scoreSearchForm));
+  if (exportBtn) exportBtn.href = params.toString() ? `/api/export?${params}` : '/api/export';
   const data = await requestJson(`/api/scores?${params}`);
   scores = data.scores || [];
   renderScores();
@@ -1844,6 +1847,39 @@ stylesBody.addEventListener('input', (event) => {
   const row = imageInput.closest('[data-style-edit-id]');
   if (row) { clearInlineLocalImagePreview(row); updateInlineImagePreview(row, imageInput.value.trim()); }
 });
+
+
+if (clearAllDataBtn) {
+  clearAllDataBtn.addEventListener('click', async (event) => {
+    const confirmed = await showConfirmDialog({
+      title: '清空全部数据？',
+      message: '这个操作会删除“已配置款式”和“评分结果”里的所有内容，不受当前筛选条件影响。',
+      details: [
+        '将删除全部款式配置。',
+        '将删除全部评分结果。',
+        '会尝试同步删除已配置款式绑定的 OSS / 七牛云图片。',
+        '系统设置、图片存储配置、评分项配置不会被删除。',
+        '删除后不可恢复。'
+      ],
+      confirmText: '确认清空全部',
+      cancelText: '取消',
+      danger: true,
+      icon: '清'
+    });
+    if (!confirmed) return;
+    setButtonBusy(event.currentTarget, true, '清空中...');
+    try {
+      const data = await requestJson('/api/data/clear-all', { method: 'DELETE' });
+      showMessage(`已清空：款式 ${data.deleted_style_count || 0} 个，评分记录 ${data.deleted_score_count || 0} 条，图片清理 ${data.image_deleted_count || 0} 张。`);
+      selectedScoreGroupKey = null;
+      await Promise.all([loadStyles(), loadScores()]);
+    } catch (e) {
+      showMessage(e.message || '清空全部数据失败', 'error');
+    } finally {
+      setButtonBusy(event.currentTarget, false);
+    }
+  });
+}
 
 scoreSearchForm.addEventListener('submit', async (event) => {
   event.preventDefault();

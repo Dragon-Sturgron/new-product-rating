@@ -16,7 +16,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>新品评审后台</title>
-  <link rel="stylesheet" href="/assets/style.css?v=20260720-settings-layout-v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=20260720-export-xlsx-clear-v1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -46,7 +46,8 @@ function adminHtml(adminPath, sessionIdleMinutes) {
         </div>
         <div class="top-actions">
           <button id="printBtn" class="ghost" type="button">打印评分结果</button>
-          <a id="exportBtn" class="ghost" href="/api/export">导出评分 CSV</a>
+          <a id="exportBtn" class="ghost" href="/api/export">导出评分 XLSX</a>
+          <button id="clearAllDataBtn" class="danger-light" type="button">清空全部数据</button>
           <button id="logoutBtn" class="danger-light" type="button">退出</button>
         </div>
       </header>
@@ -255,7 +256,7 @@ function adminHtml(adminPath, sessionIdleMinutes) {
     </section>
   </main>
   <script>window.__ADMIN_PATH__ = ${JSON.stringify(adminPath)}; window.__SESSION_IDLE_MINUTES__ = ${JSON.stringify(sessionIdleMinutes)};</script>
-  <script src="/assets/admin.js?v=20260720-settings-layout-v1" defer></script>
+  <script src="/assets/admin.js?v=20260720-export-xlsx-clear-v1" defer></script>
 </body>
 </html>`;
 }
