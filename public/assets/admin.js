@@ -1,5 +1,5 @@
-console.info('[product-review] admin import modal + paste upload v1 loaded');
-console.info("product-review admin version: 20260718-import-modal-v1");
+console.info('[product-review] admin site-data guard v1 loaded');
+console.info("product-review admin version: 20260720-site-data-guard-v1");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -66,6 +66,8 @@ let sessionGuardStarted = false;
 let sessionIdleTimer = null;
 let sessionLastRefreshAt = 0;
 let sessionLocalExpireAt = 0;
+let sessionSiteDataTimer = null;
+const SESSION_LOGIN_MARKER_STORAGE_KEY = 'product_review_admin_login_marker';
 const SESSION_EXPIRE_STORAGE_KEY = 'product_review_admin_session_expire_at';
 const sessionIdleMinutes = Number(window.__SESSION_IDLE_MINUTES__ || 120);
 const sessionIdleMs = Math.max(1, sessionIdleMinutes) * 60 * 1000;
@@ -455,8 +457,35 @@ function normalizeScoreFieldsLocal(fields) {
 function makeScoreFieldId() {
   return `field_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
-function showLogin() {
+function storageAvailable(kind = 'localStorage') {
+  try {
+    const storage = window[kind];
+    const key = '__product_review_storage_test__';
+    storage.setItem(key, '1');
+    storage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const localSessionMarkerSupported = storageAvailable('localStorage');
+const sessionStorageSupported = storageAvailable('sessionStorage');
+function setClientSessionMarker() {
+  if (!localSessionMarkerSupported) return;
+  try {
+    localStorage.setItem(SESSION_LOGIN_MARKER_STORAGE_KEY, `${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  } catch {}
+}
+function clearClientSessionMarker() {
+  try { localStorage.removeItem(SESSION_LOGIN_MARKER_STORAGE_KEY); } catch {}
   try { sessionStorage.removeItem(SESSION_EXPIRE_STORAGE_KEY); } catch {}
+}
+function hasClientSessionMarker() {
+  if (!localSessionMarkerSupported) return true;
+  try { return !!localStorage.getItem(SESSION_LOGIN_MARKER_STORAGE_KEY); } catch { return true; }
+}
+function showLogin() {
+  clearClientSessionMarker();
   stopSessionIdleGuard();
   appView.classList.add('hidden');
   loginView.classList.remove('hidden');
@@ -472,29 +501,53 @@ function startSessionIdleGuard() {
   sessionGuardStarted = true;
   sessionLastRefreshAt = Date.now();
   ['click', 'input', 'keydown', 'touchstart', 'mousemove'].forEach(name => document.addEventListener(name, handleSessionActivity, { passive: true }));
+  window.addEventListener('storage', handleClientStorageChange);
+  window.clearInterval(sessionSiteDataTimer);
+  sessionSiteDataTimer = window.setInterval(checkClientSessionMarker, 2000);
   resetSessionIdleTimer(false);
 }
 function stopSessionIdleGuard() {
   if (!sessionGuardStarted) return;
   sessionGuardStarted = false;
   window.clearTimeout(sessionIdleTimer);
+  window.clearInterval(sessionSiteDataTimer);
+  sessionSiteDataTimer = null;
   ['click', 'input', 'keydown', 'touchstart', 'mousemove'].forEach(name => document.removeEventListener(name, handleSessionActivity));
+  window.removeEventListener('storage', handleClientStorageChange);
 }
 function markSessionActivityLocal() {
   sessionLocalExpireAt = Date.now() + sessionIdleMs;
-  try { sessionStorage.setItem(SESSION_EXPIRE_STORAGE_KEY, String(sessionLocalExpireAt)); } catch {}
+  if (sessionStorageSupported) {
+    try { sessionStorage.setItem(SESSION_EXPIRE_STORAGE_KEY, String(sessionLocalExpireAt)); } catch {}
+  }
 }
 function getStoredSessionExpireAt() {
+  if (!sessionStorageSupported) return sessionLocalExpireAt || 0;
   try { return Number(sessionStorage.getItem(SESSION_EXPIRE_STORAGE_KEY) || 0); } catch { return sessionLocalExpireAt || 0; }
 }
 async function expireSessionNow(message = '长时间未操作，请重新登录') {
   window.clearTimeout(sessionIdleTimer);
+  window.clearInterval(sessionSiteDataTimer);
   await fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => null);
   showLogin();
   showMessage(message, 'error');
 }
+function checkClientSessionMarker() {
+  if (loginView && !loginView.classList.contains('hidden')) return false;
+  if (!hasClientSessionMarker()) {
+    expireSessionNow('浏览器网站数据已被清除，请重新登录');
+    return false;
+  }
+  return true;
+}
+function handleClientStorageChange(event) {
+  if (!event || event.key === SESSION_LOGIN_MARKER_STORAGE_KEY || event.key === null) {
+    checkClientSessionMarker();
+  }
+}
 function checkLocalSessionExpiry() {
   if (loginView && !loginView.classList.contains('hidden')) return;
+  if (!checkClientSessionMarker()) return;
   const expiresAt = getStoredSessionExpireAt();
   if (expiresAt && Date.now() >= expiresAt) {
     expireSessionNow('长时间未操作，请重新登录');
@@ -502,10 +555,12 @@ function checkLocalSessionExpiry() {
 }
 function handleSessionActivity() {
   if (loginView && !loginView.classList.contains('hidden')) return;
+  if (!checkClientSessionMarker()) return;
   markSessionActivityLocal();
   resetSessionIdleTimer(true);
 }
 function resetSessionIdleTimer(shouldRefresh) {
+  if (!checkClientSessionMarker()) return;
   checkLocalSessionExpiry();
   window.clearTimeout(sessionIdleTimer);
   sessionIdleTimer = window.setTimeout(() => {
@@ -1431,6 +1486,7 @@ loginForm.addEventListener('submit', async (event) => {
       body: JSON.stringify({ username: loginForm.elements.username.value.trim(), password: loginForm.elements.password.value })
     });
     loginForm.reset();
+    setClientSessionMarker();
     showApp();
     await loadSettings();
     await Promise.all([loadStyles(), loadScores()]);
@@ -1928,6 +1984,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function checkLogin() {
+  if (!hasClientSessionMarker()) {
+    await fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => null);
+    showLogin();
+    return;
+  }
   try {
     await requestJson('/api/me');
     showApp();
