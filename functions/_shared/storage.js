@@ -684,6 +684,7 @@ function createD1Storage(env) {
     await ensureD1Column(DB(), 'review_scores', 'score_items_json', 'TEXT');
     await ensureD1Column(DB(), 'review_scores', 'submission_id', 'TEXT');
     await ensureD1Column(DB(), 'review_scores', 'submitted_at', 'TEXT');
+    await ensureD1Column(DB(), 'review_scores', 'review_link_code', 'TEXT');
     await DB().prepare(`
       CREATE TABLE IF NOT EXISTS review_score_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -818,8 +819,8 @@ function createD1Storage(env) {
         INSERT INTO review_scores (
           style_id, product_image, style_code, season, base_price,
           appearance_score, material_score, craftsmanship_score, capacity_score, comfort_score, score_items_json,
-          total_score, grade, remark, reviewer, review_date, submission_id, submitted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          total_score, grade, remark, reviewer, review_date, submission_id, submitted_at, review_link_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         style.id,
         data.product_image || style.product_image || '',
@@ -828,7 +829,7 @@ function createD1Storage(env) {
         Object.prototype.hasOwnProperty.call(data, 'base_price') && data.base_price !== undefined ? data.base_price : style.base_price,
         data.appearance_score, data.material_score, data.craftsmanship_score, data.capacity_score, data.comfort_score, data.score_items_json,
         data.total_score, data.grade, data.remark, data.reviewer, data.review_date,
-        data.submission_id || newSubmissionId(), data.submitted_at || nowDateTime()
+        data.submission_id || newSubmissionId(), data.submitted_at || nowDateTime(), data.review_link_code || ''
       ).run();
       const score = await getScoreById(result.meta.last_row_id);
       await addScoreHistory(score.id, 'create', score);
@@ -842,11 +843,13 @@ function createD1Storage(env) {
       const keyword = String(filters.search || '').trim();
       const dateFrom = String(filters.date_from || '').trim();
       const dateTo = String(filters.date_to || '').trim();
+      const reviewLinkCode = normalizeReviewLinkCode(filters.review_link_code || filters.reviewLinkCode || '');
       if (keyword) {
-        where.push('(style_code LIKE ? OR season LIKE ? OR reviewer LIKE ? OR remark LIKE ?)');
+        where.push('(style_code LIKE ? OR season LIKE ? OR reviewer LIKE ? OR remark LIKE ? OR review_link_code LIKE ?)');
         const like = `%${keyword}%`;
-        binds.push(like, like, like, like);
+        binds.push(like, like, like, like, like);
       }
+      if (reviewLinkCode) { where.push('review_link_code = ?'); binds.push(reviewLinkCode); }
       if (dateFrom) { where.push('review_date >= ?'); binds.push(dateFrom); }
       if (dateTo) { where.push('review_date <= ?'); binds.push(dateTo); }
       const limit = Math.max(1, Math.min(10000, Number.parseInt(filters.limit || '1000', 10) || 1000));
@@ -1155,11 +1158,13 @@ function createKVStorage(env) {
       const keyword = String(filters.search || '').trim().toLowerCase();
       const dateFrom = String(filters.date_from || '');
       const dateTo = String(filters.date_to || '');
+      const reviewLinkCode = normalizeReviewLinkCode(filters.review_link_code || filters.reviewLinkCode || '');
       const fields = await getScoreFields();
       const rows = (await Promise.all(ids.map(getScoreById))).filter(row => row && !row.deleted_at);
       return rows
         .map(row => attachScoreItems(row, fields))
-        .filter(row => !keyword || [row.style_code, row.season, row.reviewer, row.remark].some(v => String(v || '').toLowerCase().includes(keyword)))
+        .filter(row => !keyword || [row.style_code, row.season, row.reviewer, row.remark, row.review_link_code].some(v => String(v || '').toLowerCase().includes(keyword)))
+        .filter(row => !reviewLinkCode || String(row.review_link_code || '') === reviewLinkCode)
         .filter(row => !dateFrom || String(row.review_date || '') >= dateFrom)
         .filter(row => !dateTo || String(row.review_date || '') <= dateTo)
         .sort((a, b) => String(b.review_date || '').localeCompare(String(a.review_date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')));

@@ -430,6 +430,16 @@ button.is-busy {
 }
 .search-form input { width: 210px; }
 .search-form input[type="date"] { width: 155px; }
+.search-form select {
+  width: 220px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 36px 9px 12px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
 .mobile-help {
   display: none;
   color: var(--muted);
@@ -556,7 +566,7 @@ button.is-busy {
   .score-row { grid-template-columns: 86px 1fr 44px; gap: 8px; }
   .score-row input[type="range"] { height: 40px; }
   .score-actions, .search-form, .top-actions { flex-direction: column; align-items: stretch; }
-  .search-form input, .search-form input[type="date"] { width: 100%; }
+  .search-form input, .search-form input[type="date"], .search-form select { width: 100%; }
   .mobile-help { display: block; }
   .review-table { min-width: 980px; }
 }
@@ -1116,6 +1126,12 @@ button.disabled {
   color: #1d4ed8;
   font-size: 12px;
   font-weight: 700;
+}
+.score-group-row .select-col input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #2563eb;
+  cursor: pointer;
 }
 .score-group-row.opened td { background: #f8fbff; }
 .score-group-detail-row > td { padding: 0 !important; background: #f8fbff; }

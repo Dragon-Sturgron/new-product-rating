@@ -1,5 +1,5 @@
 console.info('[product-review] admin review-link v1 loaded');
-console.info("product-review admin version: 20260720-review-link-v2");
+console.info("product-review admin version: 20260720-score-filter-export-v9");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -20,6 +20,7 @@ const scoreSearchForm = $('#scoreSearchForm');
 const deleteAllStylesBtn = $('#deleteAllStylesBtn');
 const generateReviewLinkBtn = $('#generateReviewLinkBtn');
 const deleteAllScoresBtn = $('#deleteAllScoresBtn');
+const scoreReviewLinkFilter = $('#scoreReviewLinkFilter');
 const reviewLinksBody = $('#reviewLinksBody');
 const refreshReviewLinksBtn = $('#refreshReviewLinksBtn');
 const scoresHead = $('#scoresHead');
@@ -61,6 +62,7 @@ let selectedStyleIds = new Set();
 let scores = [];
 let scoreGroups = [];
 let selectedScoreGroupKey = null;
+let selectedScoreGroupKeys = new Set();
 let scoreFields = [];
 let scoreTypes = [];
 let gradeRules = null;
@@ -896,7 +898,7 @@ function renderScoreGroupDetail(group) {
   const labels = Array.from(labelMap.values()).sort((a, b) => String(scoreTypeLabel(a.score_type, a)).localeCompare(String(scoreTypeLabel(b.score_type, b))));
   return `
     <tr class="score-group-detail-row">
-      <td colspan="4">
+      <td colspan="5">
         <div class="score-group-detail">
           <div class="section-title compact-title">
             <div>
@@ -1062,26 +1064,92 @@ function renderStyles() {
   }).join('');
   updateStyleSelectAllState();
 }
+function updateScoreLinkFilterOptions() {
+  if (!scoreReviewLinkFilter) return;
+  const previous = String(scoreReviewLinkFilter.value || '');
+  const optionMap = new Map();
+  for (const link of reviewLinks || []) {
+    const code = String(link?.code || '').trim();
+    if (!code) continue;
+    optionMap.set(code, String(link?.name || code).trim() || code);
+  }
+  for (const score of scores || []) {
+    const code = String(score?.review_link_code || '').trim();
+    if (code && !optionMap.has(code)) optionMap.set(code, code);
+  }
+  const options = Array.from(optionMap.entries()).sort((a, b) => a[1].localeCompare(b[1], 'zh-CN'));
+  scoreReviewLinkFilter.innerHTML = '<option value="">全部评分链接</option>' + options.map(([code, name]) => {
+    const label = name === code ? code : `${name} (${code})`;
+    return `<option value="${escapeHtml(code)}">${escapeHtml(label)}</option>`;
+  }).join('');
+  if (previous && optionMap.has(previous)) scoreReviewLinkFilter.value = previous;
+}
+function updateScoreSelectAllState() {
+  const input = document.querySelector('[data-score-select-all]');
+  if (!input) return;
+  const keys = scoreGroups.map(group => group.key);
+  if (!keys.length) {
+    input.checked = false;
+    input.indeterminate = false;
+    input.disabled = true;
+    return;
+  }
+  input.disabled = false;
+  const count = keys.filter(key => selectedScoreGroupKeys.has(key)).length;
+  input.checked = count === keys.length;
+  input.indeterminate = count > 0 && count < keys.length;
+}
+function selectedScoreGroups() {
+  return scoreGroups.filter(group => selectedScoreGroupKeys.has(group.key));
+}
+function triggerScoreExport() {
+  const params = new URLSearchParams(new FormData(scoreSearchForm));
+  const selected = selectedScoreGroups();
+  if (selected.length) {
+    const submissionIds = [];
+    const legacyScoreIds = [];
+    for (const group of selected) {
+      const submissionId = String(group.scores?.[0]?.submission_id || '').trim();
+      if (submissionId) submissionIds.push(submissionId);
+      else legacyScoreIds.push(...group.scores.map(score => String(score.id || '')).filter(Boolean));
+    }
+    if (submissionIds.length) params.set('submission_ids', submissionIds.join(','));
+    if (legacyScoreIds.length) params.set('score_ids', legacyScoreIds.join(','));
+  }
+  const href = params.toString() ? `/api/export?${params.toString()}` : '/api/export';
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = '';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function renderScores() {
   renderStats();
   scoreGroups = buildScoreGroups(scores);
   if (selectedScoreGroupKey && !scoreGroups.some(group => group.key === selectedScoreGroupKey)) selectedScoreGroupKey = null;
+  const visibleKeys = new Set(scoreGroups.map(group => group.key));
+  selectedScoreGroupKeys = new Set(Array.from(selectedScoreGroupKeys).filter(key => visibleKeys.has(key)));
 
   scoresHead.innerHTML = `
     <tr>
+      <th class="no-print select-col"><label class="select-all-toggle"><input type="checkbox" data-score-select-all /> <span>全选</span></label></th>
       <th>评分人</th>
       <th>评分链接</th>
       <th>提交时间</th>
       <th class="no-print">操作</th>
     </tr>`;
   if (!scoreGroups.length) {
-    scoresBody.innerHTML = '<tr><td class="empty" colspan="4">暂无评分记录。</td></tr>';
+    scoresBody.innerHTML = '<tr><td class="empty" colspan="5">暂无评分记录。</td></tr>';
+    updateScoreSelectAllState();
     return;
   }
   scoresBody.innerHTML = scoreGroups.map((group, index) => {
     const opened = selectedScoreGroupKey === group.key;
     return `
       <tr class="score-group-row ${opened ? 'opened' : ''}">
+        <td class="no-print select-col"><input type="checkbox" data-score-group-select="${escapeHtml(group.key)}" ${selectedScoreGroupKeys.has(group.key) ? 'checked' : ''} /></td>
         <td>
           <button class="link-button reviewer-link" type="button" data-score-group-action="toggle" data-group-index="${index}">${escapeHtml(group.reviewer)}</button>
           <span class="group-count">${group.scores.length} 款</span>
@@ -1096,6 +1164,7 @@ function renderScores() {
       ${opened ? renderScoreGroupDetail(group) : ''}
     `;
   }).join('');
+  updateScoreSelectAllState();
 }
 async function loadSettings() {
   const data = await requestJson('/api/settings');
@@ -1514,6 +1583,7 @@ async function loadReviewLinks() {
   const data = await requestJson('/api/review-links');
   reviewLinks = data.links || [];
   renderReviewLinks();
+  updateScoreLinkFilterOptions();
   if (scores.length) renderScores();
 }
 function selectedStyleRows() {
@@ -1680,9 +1750,9 @@ function showGenerateReviewLinkDialog() {
 
 async function loadScores() {
   const params = new URLSearchParams(new FormData(scoreSearchForm));
-  if (exportBtn) exportBtn.href = params.toString() ? `/api/export?${params}` : '/api/export';
   const data = await requestJson(`/api/scores?${params}`);
   scores = data.scores || [];
+  updateScoreLinkFilterOptions();
   renderScores();
 }
 let stylePreviewLocalObjectUrl = '';
@@ -2254,17 +2324,17 @@ scoreSearchForm.addEventListener('submit', async (event) => {
 
 if (deleteAllScoresBtn) {
   deleteAllScoresBtn.addEventListener('click', async (event) => {
-    if (!scores.length) {
-      showMessage('当前没有可删除的评分结果。', 'error');
+    const selected = selectedScoreGroups();
+    if (!selected.length) {
+      showMessage('请先勾选要删除的评分结果。', 'error');
       return;
     }
-    const groupCount = scoreGroups.length || buildScoreGroups(scores).length;
-    const scoreCount = scores.length;
+    const scoreRows = selected.flatMap(group => group.scores);
     const confirmed = await showConfirmDialog({
-      title: '删除全部评分结果？',
-      message: '确定删除当前查询结果中的全部评分结果吗？',
-      details: [`本次将删除 ${groupCount} 次提交、共 ${scoreCount} 款评分记录。`, '删除后不可恢复。'],
-      confirmText: '确认全部删除',
+      title: '删除选中评分结果？',
+      message: '确定删除当前勾选的评分结果吗？',
+      details: [`本次将删除 ${selected.length} 次提交、共 ${scoreRows.length} 款评分记录。`, '删除后不可恢复。'],
+      confirmText: '确认删除',
       cancelText: '取消',
       danger: true,
       icon: '删'
@@ -2272,13 +2342,13 @@ if (deleteAllScoresBtn) {
     if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
-      const params = new URLSearchParams(new FormData(scoreSearchForm));
-      const data = await requestJson(`/api/scores/delete-all?${params}`, { method: 'DELETE' });
-      showMessage(`已删除 ${data.deleted_count || 0} 款评分记录。`);
+      await Promise.all(scoreRows.map(score => requestJson(`/api/scores/${encodeURIComponent(score.id)}`, { method: 'DELETE' })));
+      selectedScoreGroupKeys = new Set();
       selectedScoreGroupKey = null;
+      showMessage(`已删除 ${scoreRows.length} 款评分记录。`);
       await loadScores();
     } catch (e) {
-      showMessage(e.message || '全部删除失败', 'error');
+      showMessage(e.message || '删除选中评分结果失败', 'error');
     } finally {
       setButtonBusy(event.currentTarget, false);
     }
@@ -2288,8 +2358,29 @@ if (deleteAllScoresBtn) {
 $('#clearScoreSearchBtn').addEventListener('click', async (event) => {
   setButtonBusy(event.currentTarget, true, '重置中...');
   scoreSearchForm.reset();
+  selectedScoreGroupKeys = new Set();
   try { await loadScores(); } finally { setButtonBusy(event.currentTarget, false); }
 });
+if (exportBtn) {
+  exportBtn.addEventListener('click', () => triggerScoreExport());
+}
+document.addEventListener('change', (event) => {
+  const selectAll = event.target.closest('[data-score-select-all]');
+  if (selectAll) {
+    if (selectAll.checked) scoreGroups.forEach(group => selectedScoreGroupKeys.add(group.key));
+    else scoreGroups.forEach(group => selectedScoreGroupKeys.delete(group.key));
+    renderScores();
+    return;
+  }
+  const groupSelect = event.target.closest('[data-score-group-select]');
+  if (groupSelect) {
+    const key = String(groupSelect.dataset.scoreGroupSelect || '');
+    if (groupSelect.checked) selectedScoreGroupKeys.add(key);
+    else selectedScoreGroupKeys.delete(key);
+    updateScoreSelectAllState();
+  }
+});
+
 scoresBody.addEventListener('click', async (event) => {
   const groupBtn = event.target.closest('button[data-score-group-action]');
   if (groupBtn) {

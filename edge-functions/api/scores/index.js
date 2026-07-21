@@ -11,6 +11,7 @@ export async function onRequestGet({ request, env }) {
       search: url.searchParams.get('search') || '',
       date_from: url.searchParams.get('date_from') || '',
       date_to: url.searchParams.get('date_to') || '',
+      review_link_code: url.searchParams.get('review_link_code') || '',
       limit: url.searchParams.get('limit') || '1000'
     });
     return json({ ok: true, scores });

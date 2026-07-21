@@ -12,6 +12,7 @@ export async function onRequestDelete({ request, env }) {
       search: url.searchParams.get('search') || '',
       date_from: url.searchParams.get('date_from') || '',
       date_to: url.searchParams.get('date_to') || '',
+      review_link_code: url.searchParams.get('review_link_code') || '',
       limit: url.searchParams.get('limit') || '10000'
     });
     const ids = Array.from(new Set((scores || []).map(row => row && row.id).filter(Boolean).map(String)));

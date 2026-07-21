@@ -216,12 +216,18 @@ export async function onRequestGet({ request, env }) {
   try {
     const url = new URL(request.url);
     const storage = getStorage(env);
-    const scores = await storage.listScores({
+    let scores = await storage.listScores({
       search: url.searchParams.get('search') || '',
       date_from: url.searchParams.get('date_from') || '',
       date_to: url.searchParams.get('date_to') || '',
+      review_link_code: url.searchParams.get('review_link_code') || '',
       limit: '10000'
     });
+    const selectedScoreIds = new Set(String(url.searchParams.get('score_ids') || '').split(',').map(item => item.trim()).filter(Boolean));
+    const selectedSubmissionIds = new Set(String(url.searchParams.get('submission_ids') || '').split(',').map(item => item.trim()).filter(Boolean));
+    if (selectedScoreIds.size || selectedSubmissionIds.size) {
+      scores = scores.filter(score => selectedScoreIds.has(String(score.id)) || selectedSubmissionIds.has(String(score.submission_id || '')));
+    }
     const gradeRules = storage.getGradeRules ? await storage.getGradeRules() : undefined;
     const fixedScoreColumns = [
       '价格竞争力',
