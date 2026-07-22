@@ -767,6 +767,11 @@ function createD1Storage(env) {
   }
 
   return {
+    async getStyle(id) {
+      await ensureTables();
+      return getStyleById(id);
+    },
+
     async listStyles(filters = {}) {
       await ensureTables();
       const where = ['deleted_at IS NULL'];
@@ -917,6 +922,15 @@ function createD1Storage(env) {
         .bind(toIntId(id, '评分ID')).run();
       await addScoreHistory(id, 'delete', old);
       return true;
+    },
+
+    async deleteScoresBatch(ids = []) {
+      const uniqueIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean)));
+      if (!uniqueIds.length) return 0;
+      const results = await Promise.allSettled(uniqueIds.map(id => this.deleteScore(id)));
+      const failed = results.find(item => item.status === 'rejected');
+      if (failed) throw failed.reason;
+      return results.filter(item => item.status === 'fulfilled').length;
     },
 
     async getScoreHistory(id) {
@@ -1114,6 +1128,9 @@ function createKVStorage(env) {
   }
 
   return {
+    async getStyle(id) {
+      return getStyleById(id);
+    },
     async listStyles(filters = {}) {
       const ids = await getIndex('styles');
       const keyword = String(filters.search || '').trim().toLowerCase();
@@ -1294,6 +1311,24 @@ function createKVStorage(env) {
       await addScoreHistory(id, 'delete', old);
       await refreshDailySubmissionMarker(old.reviewer, old.review_date, old.review_link_code || '');
       return true;
+    },
+    async deleteScoresBatch(ids = []) {
+      const uniqueIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean)));
+      if (!uniqueIds.length) return 0;
+      const rows = (await Promise.all(uniqueIds.map(getScoreById))).filter(row => row && !row.deleted_at);
+      await Promise.all(rows.map(async old => {
+        await Promise.all([
+          putJson(keyScore(String(old.id)), { ...old, deleted_at: now(), updated_at: now() }),
+          addScoreHistory(old.id, 'delete', old)
+        ]);
+      }));
+      const markerKeys = new Map();
+      rows.forEach(row => {
+        const key = `${normalizeReviewerName(row.reviewer)}::${row.review_date || ''}::${normalizeReviewLinkCode(row.review_link_code || '')}`;
+        if (!markerKeys.has(key)) markerKeys.set(key, row);
+      });
+      await Promise.all(Array.from(markerKeys.values()).map(row => refreshDailySubmissionMarker(row.reviewer, row.review_date, row.review_link_code || '')));
+      return rows.length;
     },
     async getScoreHistory(id) { return getJson(keyScoreHistory(String(id)), []); },
     async getScorePageCount() { const s = await getSettings(); return safeCount(s.score_page_count || '3', 3); },

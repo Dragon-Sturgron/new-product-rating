@@ -12,6 +12,7 @@ function parseId(params) {
 }
 
 async function getCurrentStyle(storage, id) {
+  if (typeof storage.getStyle === 'function') return storage.getStyle(id);
   const rows = await storage.listStyles({});
   return (rows || []).find(row => String(row.id) === String(id)) || null;
 }

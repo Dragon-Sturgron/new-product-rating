@@ -1,5 +1,5 @@
-console.info('[product-review] admin review-link v1 loaded');
-console.info("product-review admin version: 20260720-review-link-association-v10");
+console.info('[product-review] admin performance v12 loaded');
+console.info("product-review admin version: 20260722-performance-v12");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -83,6 +83,33 @@ const SESSION_EXPIRE_STORAGE_KEY = 'product_review_admin_session_expire_at';
 const sessionIdleMinutes = Number(window.__SESSION_IDLE_MINUTES__ || 120);
 const sessionIdleMs = Math.max(1, sessionIdleMinutes) * 60 * 1000;
 const sessionRefreshIntervalMs = Math.min(5 * 60 * 1000, Math.max(30 * 1000, sessionIdleMs / 3));
+
+let activeNetworkRequests = 0;
+let reviewLinksLoadedAt = 0;
+const REVIEW_LINK_CACHE_MS = 30 * 1000;
+function ensureNetworkProgressBar() {
+  let bar = document.getElementById('networkProgressBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'networkProgressBar';
+    bar.className = 'network-progress-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(bar);
+  }
+  return bar;
+}
+function beginNetworkActivity() {
+  activeNetworkRequests += 1;
+  ensureNetworkProgressBar();
+  document.body.classList.add('network-busy');
+}
+function endNetworkActivity() {
+  activeNetworkRequests = Math.max(0, activeNetworkRequests - 1);
+  if (!activeNetworkRequests) document.body.classList.remove('network-busy');
+}
+function waitForNextPaint() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
 
 function instantButtonFeedback(button) {
   if (!button || button.disabled) return;
@@ -653,25 +680,38 @@ function resetSessionIdleTimer(shouldRefresh) {
   }).catch(() => null);
 }
 async function requestJson(path, options = {}) {
-  const response = await fetch(path, { credentials: 'include', ...options, headers: options.headers || {} });
-  const data = await response.json().catch(() => null);
-  if (response.status === 401) {
-    // 登录接口 401 代表账号/密码不匹配；其他接口 401 才代表需要重新登录。
-    if (path !== '/api/login') showLogin();
-    throw new Error(data?.message || (path === '/api/login' ? '账号或密码错误' : '请先登录'));
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method !== 'GET') await waitForNextPaint();
+  beginNetworkActivity();
+  try {
+    const response = await fetch(path, { credentials: 'include', ...options, headers: options.headers || {} });
+    const data = await response.json().catch(() => null);
+    if (response.status === 401) {
+      // 登录接口 401 代表账号/密码不匹配；其他接口 401 才代表需要重新登录。
+      if (path !== '/api/login') showLogin();
+      throw new Error(data?.message || (path === '/api/login' ? '账号或密码错误' : '请先登录'));
+    }
+    if (!response.ok || data?.ok === false) throw new Error(data?.message || '请求失败');
+    return data;
+  } finally {
+    endNetworkActivity();
   }
-  if (!response.ok || data?.ok === false) throw new Error(data?.message || '请求失败');
-  return data;
 }
 async function uploadImageFile(file) {
   if (!file) return '';
   if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
   const form = new FormData();
   form.append('file', file);
-  const response = await fetch('/api/upload-image', { method: 'POST', credentials: 'include', body: form });
-  const data = await response.json().catch(() => null);
-  if (!response.ok || data?.ok === false) throw new Error(data?.message || '图片上传失败');
-  return data.url || data.image?.url || '';
+  await waitForNextPaint();
+  beginNetworkActivity();
+  try {
+    const response = await fetch('/api/upload-image', { method: 'POST', credentials: 'include', body: form });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok === false) throw new Error(data?.message || '图片上传失败');
+    return data.url || data.image?.url || '';
+  } finally {
+    endNetworkActivity();
+  }
 }
 function setActiveTab(targetId) {
   $$('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.target === targetId));
@@ -679,7 +719,9 @@ function setActiveTab(targetId) {
   $('#scoreSection').classList.toggle('hidden', targetId !== 'scoreSection');
   const linkSection = $('#linkSection');
   if (linkSection) linkSection.classList.toggle('hidden', targetId !== 'linkSection');
-  if (targetId === 'linkSection') loadReviewLinks().catch(e => showMessage(e.message, 'error'));
+  if (targetId === 'linkSection' && (!reviewLinksLoadedAt || Date.now() - reviewLinksLoadedAt > REVIEW_LINK_CACHE_MS)) {
+    loadReviewLinks().catch(e => showMessage(e.message, 'error'));
+  }
   const settingsSection = $('#settingsSection');
   if (settingsSection) settingsSection.classList.toggle('hidden', targetId !== 'settingsSection');
 }
@@ -1593,10 +1635,15 @@ function renderReviewLinks() {
   }).join('');
   updateReviewLinkSelectAllState();
 }
-async function loadReviewLinks() {
+async function loadReviewLinks(options = {}) {
   if (!reviewLinksBody) return;
+  if (!options.force && reviewLinksLoadedAt && Date.now() - reviewLinksLoadedAt < REVIEW_LINK_CACHE_MS && reviewLinks.length) {
+    renderReviewLinks();
+    return;
+  }
   const data = await requestJson('/api/review-links');
   reviewLinks = data.links || [];
+  reviewLinksLoadedAt = Date.now();
   const availableCodes = new Set(reviewLinks.map(item => String(item.code || '')));
   selectedReviewLinkCodes = new Set(Array.from(selectedReviewLinkCodes).filter(code => availableCodes.has(code)));
   renderReviewLinks();
@@ -1680,13 +1727,18 @@ async function showEditReviewLinkDialog(link) {
     if (!expires) { showMessage('请设置评分链接有效期。', 'error'); return; }
     setButtonBusy(confirmBtn, true, '保存中...');
     try {
-      await requestJson(`/api/review-links/${encodeURIComponent(link.code)}`, {
+      const data = await requestJson(`/api/review-links/${encodeURIComponent(link.code)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json; charset=utf-8' },
         body: JSON.stringify({ name, expires_at: expires, remark, style_ids })
       });
+      const updatedLink = data.link || { ...link, name, expires_at: expires, remark, style_ids, style_count: style_ids.length };
+      reviewLinks = reviewLinks.map(item => String(item.code) === String(link.code) ? updatedLink : item);
+      reviewLinksLoadedAt = Date.now();
       close();
-      await loadReviewLinks();
+      renderReviewLinks();
+      updateScoreLinkFilterOptions();
+      if (scores.length) renderScores();
       showMessage('评分链接已更新');
     } catch (e) {
       showMessage(e.message || '更新评分链接失败', 'error');
@@ -1747,11 +1799,17 @@ function showGenerateReviewLinkDialog() {
         headers: { 'content-type': 'application/json; charset=utf-8' },
         body: JSON.stringify({ name, expires_at: expires, remark, style_ids: selected.map(row => row.id) })
       });
-      const url = reviewLinkUrl(data.link?.code);
+      const createdLink = data.link;
+      const url = reviewLinkUrl(createdLink?.code);
       close();
       selectedStyleIds = new Set();
       renderStyles();
-      await loadReviewLinks();
+      if (createdLink) {
+        reviewLinks = [createdLink, ...reviewLinks.filter(item => String(item.code) !== String(createdLink.code))];
+        reviewLinksLoadedAt = Date.now();
+        renderReviewLinks();
+        updateScoreLinkFilterOptions();
+      }
       await copyText(url).catch(() => false);
       showMessage(`评分链接已生成，并已尝试复制：${url}`);
       setActiveTab('linkSection');
@@ -1988,8 +2046,8 @@ saveScoreFieldsBtn.addEventListener('click', async () => {
     scoreFields = normalizeScoreFieldsLocal(data.settings?.score_fields || fields);
     renderScoreTypeEditor();
     renderScoreFieldEditor();
+    renderScores();
     showMessage('评分类型和评分项已保存，前端评分页会按新配置显示');
-    await loadScores();
   } catch (e) { showMessage(e.message, 'error'); }
   finally { setButtonBusy(saveScoreFieldsBtn, false); }
 });
@@ -2089,14 +2147,22 @@ styleForm.addEventListener('submit', async (event) => {
       active: styleForm.elements.active.checked ? 1 : 0,
       style_remark: styleForm.elements.style_remark.value.trim()
     };
-    await requestJson(editingStyleId ? `/api/styles/${encodeURIComponent(editingStyleId)}` : '/api/styles', {
+    const data = await requestJson(editingStyleId ? `/api/styles/${encodeURIComponent(editingStyleId)}` : '/api/styles', {
       method: editingStyleId ? 'PUT' : 'POST',
       headers: { 'content-type': 'application/json; charset=utf-8' },
       body: JSON.stringify(payload)
     });
+    const savedStyle = data.style;
+    if (savedStyle) {
+      const index = styles.findIndex(item => String(item.id) === String(savedStyle.id));
+      if (index >= 0) styles[index] = savedStyle;
+      else styles.push(savedStyle);
+      renderStyles();
+    } else {
+      await loadStyles();
+    }
     showMessage(editingStyleId ? '款式已更新' : '款式已新增');
     resetStyleForm();
-    await loadStyles();
   } catch (e) { showMessage(e.message, 'error'); }
   finally { setButtonBusy(submitBtn, false); }
 });
@@ -2137,12 +2203,18 @@ if (deleteAllStylesBtn) {
     if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
-      await Promise.all(ids.map(id => requestJson(`/api/styles/${encodeURIComponent(id)}`, { method: 'DELETE' })));
-      ids.forEach(id => selectedStyleIds.delete(id));
+      const data = await requestJson('/api/styles/delete-all', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ ids })
+      });
+      const deletedIds = new Set((data.deleted_ids || ids).map(String));
+      styles = styles.filter(item => !deletedIds.has(String(item.id)));
+      deletedIds.forEach(id => selectedStyleIds.delete(id));
       inlineEditingStyleId = null;
       resetStyleForm();
-      showMessage(`已删除 ${count} 个款式。`);
-      await loadStyles();
+      renderStyles();
+      showMessage(`已删除 ${data.deleted_count ?? count} 个款式。`);
     } catch (e) {
       showMessage(e.message || '删除选中款式失败', 'error');
     } finally {
@@ -2182,14 +2254,16 @@ stylesBody.addEventListener('click', async (event) => {
     try {
       await commitPendingInlineImageIfNeeded(row);
       const payload = readInlineStylePayload(row);
-      await requestJson(`/api/styles/${encodeURIComponent(style.id)}`, {
+      const data = await requestJson(`/api/styles/${encodeURIComponent(style.id)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json; charset=utf-8' },
         body: JSON.stringify(payload)
       });
+      const updated = data.style || { ...style, ...payload };
+      styles = styles.map(item => String(item.id) === String(style.id) ? updated : item);
       showMessage('款式已更新');
       inlineEditingStyleId = null;
-      await loadStyles();
+      renderStyles();
     } catch(e) { showMessage(e.message, 'error'); }
     finally { setButtonBusy(btn, false); }
     return;
@@ -2205,7 +2279,16 @@ stylesBody.addEventListener('click', async (event) => {
       icon: '删'
     });
     if (!confirmed) return;
-    try { await requestJson(`/api/styles/${encodeURIComponent(style.id)}`, { method: 'DELETE' }); showMessage('款式已删除'); inlineEditingStyleId = null; await loadStyles(); } catch(e) { showMessage(e.message, 'error'); }
+    setButtonBusy(btn, true, '删除中...');
+    try {
+      await requestJson(`/api/styles/${encodeURIComponent(style.id)}`, { method: 'DELETE' });
+      styles = styles.filter(item => String(item.id) !== String(style.id));
+      selectedStyleIds.delete(String(style.id));
+      showMessage('款式已删除');
+      inlineEditingStyleId = null;
+      renderStyles();
+    } catch(e) { showMessage(e.message, 'error'); }
+    finally { setButtonBusy(btn, false); }
   }
 });
 stylesBody.addEventListener('change', async (event) => {
@@ -2258,7 +2341,7 @@ if (generateReviewLinkBtn) {
 if (refreshReviewLinksBtn) {
   refreshReviewLinksBtn.addEventListener('click', async (event) => {
     setButtonBusy(event.currentTarget, true, '刷新中...');
-    try { await loadReviewLinks(); } catch (e) { showMessage(e.message || '刷新评分链接失败', 'error'); }
+    try { await loadReviewLinks({ force: true }); } catch (e) { showMessage(e.message || '刷新评分链接失败', 'error'); }
     finally { setButtonBusy(event.currentTarget, false); }
   });
 }
@@ -2299,10 +2382,19 @@ if (deleteSelectedReviewLinksBtn) {
     if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
-      await Promise.all(codes.map(code => requestJson(`/api/review-links/${encodeURIComponent(code)}`, { method: 'DELETE' })));
+      const data = await requestJson('/api/review-links/delete-selected', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ codes })
+      });
+      const deletedCodes = new Set((data.deleted_codes || codes).map(String));
+      reviewLinks = reviewLinks.filter(item => !deletedCodes.has(String(item.code)));
       selectedReviewLinkCodes.clear();
-      showMessage(`已删除 ${codes.length} 个评分链接。`);
-      await loadReviewLinks();
+      reviewLinksLoadedAt = Date.now();
+      renderReviewLinks();
+      updateScoreLinkFilterOptions();
+      if (scores.length) renderScores();
+      showMessage(`已删除 ${data.deleted_count ?? codes.length} 个评分链接。`);
     } catch (e) {
       showMessage(e.message || '删除选中评分链接失败', 'error');
     } finally {
@@ -2340,8 +2432,12 @@ if (reviewLinksBody) {
       try {
         await requestJson(`/api/review-links/${encodeURIComponent(code)}`, { method: 'DELETE' });
         selectedReviewLinkCodes.delete(code);
+        reviewLinks = reviewLinks.filter(item => String(item.code) !== code);
+        reviewLinksLoadedAt = Date.now();
+        renderReviewLinks();
+        updateScoreLinkFilterOptions();
+        if (scores.length) renderScores();
         showMessage('评分链接已删除');
-        await loadReviewLinks();
       } catch (e) { showMessage(e.message || '删除评分链接失败', 'error'); }
       finally { setButtonBusy(btn, false); }
     }
@@ -2408,11 +2504,18 @@ if (deleteAllScoresBtn) {
     if (!confirmed) return;
     setButtonBusy(event.currentTarget, true, '删除中...');
     try {
-      await Promise.all(scoreRows.map(score => requestJson(`/api/scores/${encodeURIComponent(score.id)}`, { method: 'DELETE' })));
+      const ids = scoreRows.map(score => String(score.id));
+      const data = await requestJson('/api/scores/delete-all', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ ids })
+      });
+      const deletedIds = new Set((data.deleted_ids || ids).map(String));
+      scores = scores.filter(score => !deletedIds.has(String(score.id)));
       selectedScoreGroupKeys = new Set();
       selectedScoreGroupKey = null;
-      showMessage(`已删除 ${scoreRows.length} 款评分记录。`);
-      await loadScores();
+      renderScores();
+      showMessage(`已删除 ${data.deleted_count ?? scoreRows.length} 款评分记录。`);
     } catch (e) {
       showMessage(e.message || '删除选中评分结果失败', 'error');
     } finally {
@@ -2471,10 +2574,18 @@ scoresBody.addEventListener('click', async (event) => {
       if (!confirmed) return;
       setButtonBusy(groupBtn, true, '删除中...');
       try {
-        await Promise.all(group.scores.map(score => requestJson(`/api/scores/${encodeURIComponent(score.id)}`, { method: 'DELETE' })));
+        const ids = group.scores.map(score => String(score.id));
+        const data = await requestJson('/api/scores/delete-all', {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ ids })
+        });
+        const deletedIds = new Set((data.deleted_ids || ids).map(String));
+        scores = scores.filter(score => !deletedIds.has(String(score.id)));
+        selectedScoreGroupKeys.delete(group.key);
         showMessage('评分结果已删除');
         selectedScoreGroupKey = null;
-        await loadScores();
+        renderScores();
       } catch (e) {
         showMessage(e.message || '删除失败', 'error');
       } finally {

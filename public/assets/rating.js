@@ -1,4 +1,4 @@
-console.info("product-review rating version: 20260720-review-link-required-v2");
+console.info("product-review rating version: 20260722-performance-v12");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -72,6 +72,47 @@ let scrollTimer = null;
 let submittingAll = false;
 let draftSaveTimer = null;
 let draftSaving = false;
+
+let activeNetworkRequests = 0;
+function ensureNetworkProgressBar() {
+  let bar = document.getElementById('networkProgressBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'networkProgressBar';
+    bar.className = 'network-progress-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(bar);
+  }
+  return bar;
+}
+function beginNetworkActivity() {
+  activeNetworkRequests += 1;
+  ensureNetworkProgressBar();
+  document.body.classList.add('network-busy');
+}
+function endNetworkActivity() {
+  activeNetworkRequests = Math.max(0, activeNetworkRequests - 1);
+  if (!activeNetworkRequests) document.body.classList.remove('network-busy');
+}
+function waitForNextPaint() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+function setButtonBusy(button, busy, text = '处理中...') {
+  if (!button) return;
+  if (busy) {
+    if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+    button.textContent = text;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.classList.add('is-busy');
+  } else {
+    if (button.dataset.originalText) button.textContent = button.dataset.originalText;
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    button.classList.remove('is-busy');
+    delete button.dataset.originalText;
+  }
+}
 
 function today() {
   const d = new Date();
@@ -587,18 +628,25 @@ function showView(view) {
 }
 
 async function requestJson(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: options.headers || {}
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok || data?.ok === false) {
-    const error = new Error(data?.message || '请求失败');
-    error.code = data?.code || '';
-    error.status = response.status;
-    throw error;
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method !== 'GET') await waitForNextPaint();
+  beginNetworkActivity();
+  try {
+    const response = await fetch(path, {
+      ...options,
+      headers: options.headers || {}
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.message || '请求失败');
+      error.code = data?.code || '';
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  } finally {
+    endNetworkActivity();
   }
-  return data;
 }
 
 async function loadStyles() {
@@ -802,7 +850,7 @@ async function submitCurrentAndNext() {
   }
 
   submittingAll = true;
-  [nextSlideBtn, bottomNextBtn].forEach(btn => { if (btn) { btn.disabled = true; btn.textContent = '提交中...'; } });
+  [nextSlideBtn, bottomNextBtn].forEach(btn => setButtonBusy(btn, true, '提交中...'));
   try {
     const payload = {
       reviewer,
@@ -845,6 +893,7 @@ async function submitCurrentAndNext() {
   } catch (e) {
     showMessage(e.message, 'error');
     submittingAll = false;
+    [nextSlideBtn, bottomNextBtn].forEach(btn => setButtonBusy(btn, false));
     updateStatus();
   }
 }
@@ -856,13 +905,17 @@ reviewerForm.addEventListener('submit', async (event) => {
     showMessage('请先输入评分人姓名', 'error');
     return;
   }
+  const submitBtn = reviewerForm.querySelector('button[type="submit"]');
   reviewerNameText.textContent = reviewer;
+  setButtonBusy(submitBtn, true, '加载中...');
   try {
     const restored = await loadStyles();
     showView(ratingView);
     if (restored) showMessage(`已恢复 ${reviewer} 今天未提交的评分进度，继续从第 ${currentIndex + 1} 款开始。`);
   } catch (e) {
     showMessage(e.message, 'error');
+  } finally {
+    setButtonBusy(submitBtn, false);
   }
 });
 

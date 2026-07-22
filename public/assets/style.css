@@ -1834,3 +1834,51 @@ button.disabled {
 }
 
 .link-table .select-col { width: 84px; }
+
+
+/* V12 响应反馈与网络进度 */
+.network-progress-bar {
+  position: fixed;
+  z-index: 20000;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  pointer-events: none;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, #2563eb, #60a5fa, #2563eb);
+  transition: opacity .12s ease, transform .18s ease;
+}
+body.network-busy .network-progress-bar {
+  opacity: 1;
+  animation: networkProgress 1s ease-in-out infinite;
+}
+@keyframes networkProgress {
+  0% { transform: scaleX(.08); }
+  55% { transform: scaleX(.72); }
+  100% { transform: scaleX(.96); }
+}
+button.is-busy {
+  position: relative;
+  cursor: wait;
+  opacity: .86;
+}
+button.is-busy::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: busySpin .55s linear infinite;
+}
+@keyframes busySpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  body.network-busy .network-progress-bar,
+  button.is-busy::before { animation: none; }
+}
