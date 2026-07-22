@@ -1579,7 +1579,7 @@ function renderReviewLinks() {
       <tr>
         <td class="no-print select-col"><input type="checkbox" data-review-link-select="${escapeHtml(link.code)}" ${selectedReviewLinkCodes.has(String(link.code)) ? 'checked' : ''} /></td>
         <td><strong>${escapeHtml(link.name || link.code)}</strong>${link.remark ? `<small class="link-remark">${escapeHtml(link.remark)}</small>` : ''}</td>
-        <td class="link-url-cell"><code>${escapeHtml(url)}</code></td>
+        <td class="link-url-cell"><a class="review-link-open" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="在新标签页打开评分链接"><code>${escapeHtml(url)}</code></a></td>
         <td>${Array.isArray(link.style_ids) ? link.style_ids.length : Number(link.style_count || 0)}</td>
         <td>${escapeHtml(link.expires_at || '-')}</td>
         <td>${status}</td>
