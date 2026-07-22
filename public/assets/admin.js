@@ -1,5 +1,5 @@
 console.info('[product-review] admin review-link v1 loaded');
-console.info("product-review admin version: 20260720-score-filter-export-v9");
+console.info("product-review admin version: 20260720-review-link-association-v10");
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -23,6 +23,7 @@ const deleteAllScoresBtn = $('#deleteAllScoresBtn');
 const scoreReviewLinkFilter = $('#scoreReviewLinkFilter');
 const reviewLinksBody = $('#reviewLinksBody');
 const refreshReviewLinksBtn = $('#refreshReviewLinksBtn');
+const deleteSelectedReviewLinksBtn = $('#deleteSelectedReviewLinksBtn');
 const scoresHead = $('#scoresHead');
 const scoresBody = $('#scoresBody');
 const statsGrid = $('#statsGrid');
@@ -58,6 +59,7 @@ const STYLE_IMPORT_TEMPLATE_URL = '/assets/templates/style-import-template.xlsx'
 
 let styles = [];
 let reviewLinks = [];
+let selectedReviewLinkCodes = new Set();
 let selectedStyleIds = new Set();
 let scores = [];
 let scoreGroups = [];
@@ -1551,10 +1553,21 @@ function ensureStyleImportControls() {
   importBtn.addEventListener('click', openStyleImportDialog);
 }
 
+function updateReviewLinkSelectAllState() {
+  const selectAll = document.querySelector('[data-review-link-select-all]');
+  if (!selectAll) return;
+  const visibleCodes = reviewLinks.map(item => String(item.code || '')).filter(Boolean);
+  const selectedCount = visibleCodes.filter(code => selectedReviewLinkCodes.has(code)).length;
+  selectAll.disabled = visibleCodes.length === 0;
+  selectAll.checked = visibleCodes.length > 0 && selectedCount === visibleCodes.length;
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < visibleCodes.length;
+}
+
 function renderReviewLinks() {
   if (!reviewLinksBody) return;
   if (!reviewLinks.length) {
-    reviewLinksBody.innerHTML = '<tr><td class="empty" colspan="7">暂无评分链接。请在“已配置款式”勾选款式后生成。</td></tr>';
+    reviewLinksBody.innerHTML = '<tr><td class="empty" colspan="8">暂无评分链接。请在“已配置款式”勾选款式后生成。</td></tr>';
+    updateReviewLinkSelectAllState();
     return;
   }
   reviewLinksBody.innerHTML = reviewLinks.map(link => {
@@ -1564,6 +1577,7 @@ function renderReviewLinks() {
     const url = reviewLinkUrl(link.code);
     return `
       <tr>
+        <td class="no-print select-col"><input type="checkbox" data-review-link-select="${escapeHtml(link.code)}" ${selectedReviewLinkCodes.has(String(link.code)) ? 'checked' : ''} /></td>
         <td><strong>${escapeHtml(link.name || link.code)}</strong>${link.remark ? `<small class="link-remark">${escapeHtml(link.remark)}</small>` : ''}</td>
         <td class="link-url-cell"><code>${escapeHtml(url)}</code></td>
         <td>${Array.isArray(link.style_ids) ? link.style_ids.length : Number(link.style_count || 0)}</td>
@@ -1577,11 +1591,14 @@ function renderReviewLinks() {
         </div></td>
       </tr>`;
   }).join('');
+  updateReviewLinkSelectAllState();
 }
 async function loadReviewLinks() {
   if (!reviewLinksBody) return;
   const data = await requestJson('/api/review-links');
   reviewLinks = data.links || [];
+  const availableCodes = new Set(reviewLinks.map(item => String(item.code || '')));
+  selectedReviewLinkCodes = new Set(Array.from(selectedReviewLinkCodes).filter(code => availableCodes.has(code)));
   renderReviewLinks();
   updateScoreLinkFilterOptions();
   if (scores.length) renderScores();
@@ -2246,6 +2263,54 @@ if (refreshReviewLinksBtn) {
   });
 }
 if (reviewLinksBody) {
+  reviewLinksBody.addEventListener('change', (event) => {
+    const rowCheck = event.target.closest('[data-review-link-select]');
+    if (!rowCheck) return;
+    const code = String(rowCheck.dataset.reviewLinkSelect || '');
+    if (rowCheck.checked) selectedReviewLinkCodes.add(code);
+    else selectedReviewLinkCodes.delete(code);
+    updateReviewLinkSelectAllState();
+  });
+}
+document.addEventListener('change', (event) => {
+  const selectAll = event.target.closest('[data-review-link-select-all]');
+  if (!selectAll) return;
+  const codes = reviewLinks.map(item => String(item.code || '')).filter(Boolean);
+  if (selectAll.checked) codes.forEach(code => selectedReviewLinkCodes.add(code));
+  else codes.forEach(code => selectedReviewLinkCodes.delete(code));
+  renderReviewLinks();
+});
+if (deleteSelectedReviewLinksBtn) {
+  deleteSelectedReviewLinksBtn.addEventListener('click', async (event) => {
+    const codes = Array.from(selectedReviewLinkCodes).filter(Boolean);
+    if (!codes.length) {
+      showMessage('请先勾选要删除的评分链接。', 'error');
+      return;
+    }
+    const confirmed = await showConfirmDialog({
+      title: '删除选中评分链接？',
+      message: `确定删除选中的 ${codes.length} 个评分链接吗？`,
+      details: ['删除后这些链接将无法继续访问。', '已经提交的评分结果不会被删除。'],
+      confirmText: '确认删除',
+      cancelText: '取消',
+      danger: true,
+      icon: '删'
+    });
+    if (!confirmed) return;
+    setButtonBusy(event.currentTarget, true, '删除中...');
+    try {
+      await Promise.all(codes.map(code => requestJson(`/api/review-links/${encodeURIComponent(code)}`, { method: 'DELETE' })));
+      selectedReviewLinkCodes.clear();
+      showMessage(`已删除 ${codes.length} 个评分链接。`);
+      await loadReviewLinks();
+    } catch (e) {
+      showMessage(e.message || '删除选中评分链接失败', 'error');
+    } finally {
+      setButtonBusy(event.currentTarget, false);
+    }
+  });
+}
+if (reviewLinksBody) {
   reviewLinksBody.addEventListener('click', async (event) => {
     const btn = event.target.closest('button[data-link-action]');
     if (!btn) return;
@@ -2274,6 +2339,7 @@ if (reviewLinksBody) {
       setButtonBusy(btn, true, '删除中...');
       try {
         await requestJson(`/api/review-links/${encodeURIComponent(code)}`, { method: 'DELETE' });
+        selectedReviewLinkCodes.delete(code);
         showMessage('评分链接已删除');
         await loadReviewLinks();
       } catch (e) { showMessage(e.message || '删除评分链接失败', 'error'); }

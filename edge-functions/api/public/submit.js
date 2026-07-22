@@ -26,13 +26,13 @@ function linkExpired(link) {
   return !!expires && expires <= beijingDateTime();
 }
 
-async function getDailySubmission(storage, reviewer, reviewDate) {
+async function getDailySubmission(storage, reviewer, reviewDate, reviewLinkCode = '') {
   if (typeof storage.getDailySubmission === 'function') {
-    const row = await storage.getDailySubmission(reviewer, reviewDate);
+    const row = await storage.getDailySubmission(reviewer, reviewDate, reviewLinkCode);
     if (row) return row;
   }
-  const rows = await storage.listScores({ date_from: reviewDate, date_to: reviewDate, search: reviewer, limit: 5000 });
-  return (rows || []).find(row => sameReviewer(row.reviewer, reviewer) && String(row.review_date || '') === reviewDate) || null;
+  const rows = await storage.listScores({ date_from: reviewDate, date_to: reviewDate, search: reviewer, review_link_code: reviewLinkCode, limit: 5000 });
+  return (rows || []).find(row => sameReviewer(row.reviewer, reviewer) && String(row.review_date || '') === reviewDate && (!reviewLinkCode || normalizeLinkCode(row.review_link_code) === normalizeLinkCode(reviewLinkCode))) || null;
 }
 
 function newSubmissionId() {
@@ -72,12 +72,12 @@ export async function onRequestPost({ request, env }) {
     const review_date = beijingDate();
     const submitted_at = beijingDateTime();
 
-    const existing = await getDailySubmission(storage, reviewer, review_date);
+    const existing = await getDailySubmission(storage, reviewer, review_date, reviewLinkCode);
     if (existing) {
       return json({
         ok: false,
         code: 'DUPLICATE_DAILY_SUBMISSION',
-        message: `${reviewer} 今天已经提交过评分，不能重复提交。`,
+        message: `${reviewer} 今天已经通过该评分链接提交过评分，不能重复提交。`,
         existing_submission_id: existing.submission_id || '',
         existing_submitted_at: existing.submitted_at || existing.created_at || ''
       }, 409);
@@ -97,7 +97,7 @@ export async function onRequestPost({ request, env }) {
     }, scoreFields, gradeRules));
 
     const scores = typeof storage.createScoresBatch === 'function'
-      ? await storage.createScoresBatch(normalized, { reviewer, review_date, submission_id, submitted_at, skip_duplicate_check: true })
+      ? await storage.createScoresBatch(normalized, { reviewer, review_date, submission_id, submitted_at, review_link_code: reviewLinkCode, skip_duplicate_check: true })
       : [];
     if (!scores.length) {
       for (const item of normalized) {

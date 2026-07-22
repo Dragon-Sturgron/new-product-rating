@@ -461,7 +461,8 @@ export function normalizeScorePayload(payload = {}, scoreFields = DEFAULT_SCORE_
     season: String(payload.season || '').trim(),
     base_price: Object.prototype.hasOwnProperty.call(payload, 'base_price') ? toPrice(payload.base_price) : undefined,
     submission_id: String(payload.submission_id || '').trim(),
-    submitted_at: String(payload.submitted_at || '').trim()
+    submitted_at: String(payload.submitted_at || '').trim(),
+    review_link_code: normalizeReviewLinkCode(payload.review_link_code || payload.reviewLinkCode || '')
   };
   if (!data.reviewer) throw new Error('评分人姓名不能为空');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.review_date)) throw new Error('评审日期格式应为 YYYY-MM-DD');
@@ -859,15 +860,22 @@ function createD1Storage(env) {
       return (results || []).map(row => attachScoreItems(row, fields));
     },
 
-    async getDailySubmission(reviewer, reviewDate) {
+    async getDailySubmission(reviewer, reviewDate, reviewLinkCode = '') {
       await ensureTables();
+      const cleanLinkCode = normalizeReviewLinkCode(reviewLinkCode);
+      const where = ['deleted_at IS NULL', 'reviewer = ?', 'review_date = ?'];
+      const binds = [normalizeReviewerName(reviewer), String(reviewDate || '')];
+      if (cleanLinkCode) {
+        where.push('review_link_code = ?');
+        binds.push(cleanLinkCode);
+      }
       const row = await DB().prepare(`
-        SELECT reviewer, review_date, submission_id, submitted_at, created_at
+        SELECT reviewer, review_date, submission_id, submitted_at, created_at, review_link_code
         FROM review_scores
-        WHERE deleted_at IS NULL AND reviewer = ? AND review_date = ?
+        WHERE ${where.join(' AND ')}
         ORDER BY COALESCE(submitted_at, created_at) DESC, id DESC
         LIMIT 1
-      `).bind(normalizeReviewerName(reviewer), String(reviewDate || '')).first();
+      `).bind(...binds).first();
       return row || null;
     },
 
@@ -1035,7 +1043,7 @@ function createKVStorage(env) {
   const keyScore = (id) => key(`score:${id}`);
   const keyScoreHistory = (id) => key(`score-history:${id}`);
   const keyDraft = (reviewer, date = dateInTimezone(env), linkCode = '') => key(`draft:${date}:${hashText(normalizeDraftReviewer(reviewer))}:${hashText(normalizeReviewLinkCode(linkCode) || 'all')}`);
-  const keySubmissionDay = (reviewer, date = beijingDate()) => key(`submission-day:${date}:${hashText(normalizeReviewerName(reviewer))}`);
+  const keySubmissionDay = (reviewer, date = beijingDate(), reviewLinkCode = '') => key(`submission-day:${date}:${hashText(normalizeReviewerName(reviewer))}:${hashText(normalizeReviewLinkCode(reviewLinkCode) || 'all')}`);
   const keyReviewLink = (code) => key(`review-link:${normalizeReviewLinkCode(code)}`);
 
   async function getJson(k, fallback) {
@@ -1080,24 +1088,29 @@ function createKVStorage(env) {
     list.unshift({ id: crypto.randomUUID(), score_id: id, action, snapshot_json: JSON.stringify(snapshot || {}), changed_at: now() });
     await putJson(keyScoreHistory(id), list.slice(0, 100));
   }
-  async function refreshDailySubmissionMarker(reviewer, reviewDate) {
+  async function refreshDailySubmissionMarker(reviewer, reviewDate, reviewLinkCode = '') {
     const name = normalizeReviewerName(reviewer);
     const date = String(reviewDate || '');
+    const cleanLinkCode = normalizeReviewLinkCode(reviewLinkCode);
     if (!name || !date) return;
     const ids = await getIndex('scores');
     for (const scoreId of ids) {
       const row = await getScoreById(scoreId);
-      if (row && !row.deleted_at && normalizeReviewerName(row.reviewer) === name && String(row.review_date || '') === date) {
-        await putJson(keySubmissionDay(name, date), {
+      if (row && !row.deleted_at
+        && normalizeReviewerName(row.reviewer) === name
+        && String(row.review_date || '') === date
+        && (!cleanLinkCode || normalizeReviewLinkCode(row.review_link_code) === cleanLinkCode)) {
+        await putJson(keySubmissionDay(name, date, cleanLinkCode), {
           reviewer: row.reviewer,
           review_date: row.review_date,
           submission_id: row.submission_id || '',
-          submitted_at: row.submitted_at || row.created_at || ''
+          submitted_at: row.submitted_at || row.created_at || '',
+          review_link_code: normalizeReviewLinkCode(row.review_link_code || cleanLinkCode)
         }, { expirationTtl: Math.max(60, 48 * 60 * 60) });
         return;
       }
     }
-    await deleteKey(keySubmissionDay(name, date));
+    await deleteKey(keySubmissionDay(name, date, cleanLinkCode));
   }
 
   return {
@@ -1169,18 +1182,29 @@ function createKVStorage(env) {
         .filter(row => !dateTo || String(row.review_date || '') <= dateTo)
         .sort((a, b) => String(b.review_date || '').localeCompare(String(a.review_date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
     },
-    async getDailySubmission(reviewer, reviewDate) {
+    async getDailySubmission(reviewer, reviewDate, reviewLinkCode = '') {
       const name = normalizeReviewerName(reviewer);
       const date = String(reviewDate || beijingDate());
+      const cleanLinkCode = normalizeReviewLinkCode(reviewLinkCode);
       if (!name) return null;
-      const marker = await getJson(keySubmissionDay(name, date), null);
-      if (marker && marker.reviewer && String(marker.review_date || '') === date) return marker;
+      const marker = await getJson(keySubmissionDay(name, date, cleanLinkCode), null);
+      if (marker && marker.reviewer && String(marker.review_date || '') === date
+        && (!cleanLinkCode || normalizeReviewLinkCode(marker.review_link_code) === cleanLinkCode)) return marker;
       const ids = await getIndex('scores');
       for (const id of ids) {
         const row = await getScoreById(id);
-        if (row && !row.deleted_at && normalizeReviewerName(row.reviewer) === name && String(row.review_date || '') === date) {
-          const found = { reviewer: row.reviewer, review_date: row.review_date, submission_id: row.submission_id || '', submitted_at: row.submitted_at || row.created_at || '' };
-          await putJson(keySubmissionDay(name, date), found, { expirationTtl: secondsUntilNextLocalDay(env) });
+        if (row && !row.deleted_at
+          && normalizeReviewerName(row.reviewer) === name
+          && String(row.review_date || '') === date
+          && (!cleanLinkCode || normalizeReviewLinkCode(row.review_link_code) === cleanLinkCode)) {
+          const found = {
+            reviewer: row.reviewer,
+            review_date: row.review_date,
+            submission_id: row.submission_id || '',
+            submitted_at: row.submitted_at || row.created_at || '',
+            review_link_code: normalizeReviewLinkCode(row.review_link_code || cleanLinkCode)
+          };
+          await putJson(keySubmissionDay(name, date, cleanLinkCode), found, { expirationTtl: secondsUntilNextLocalDay(env) });
           return found;
         }
       }
@@ -1193,9 +1217,9 @@ function createKVStorage(env) {
       const reviewerName = normalizeReviewerName(meta.reviewer || normalizedItems[0]?.reviewer);
       const reviewDate = String(meta.review_date || normalizedItems[0]?.review_date || beijingDate());
       if (!meta.skip_duplicate_check) {
-        const existing = await this.getDailySubmission(reviewerName, reviewDate);
+        const existing = await this.getDailySubmission(reviewerName, reviewDate, meta.review_link_code || meta.reviewLinkCode || normalizedItems[0]?.review_link_code || '');
         if (existing) {
-          const error = new Error(`${reviewerName} 今天已经提交过评分，不能重复提交。`);
+          const error = new Error(`${reviewerName} 今天已经通过该评分链接提交过评分，不能重复提交。`);
           error.status = 409;
           throw error;
         }
@@ -1207,6 +1231,7 @@ function createKVStorage(env) {
       styleRows.forEach(style => { if (style) styleById.set(String(style.id), style); });
       const submissionId = String(meta.submission_id || normalizedItems[0]?.submission_id || newSubmissionId());
       const submittedAt = String(meta.submitted_at || normalizedItems[0]?.submitted_at || beijingDateTime());
+      const reviewLinkCode = normalizeReviewLinkCode(meta.review_link_code || meta.reviewLinkCode || normalizedItems[0]?.review_link_code || '');
       const rows = normalizedItems.map((data) => {
         const style = styleById.get(String(data.style_id));
         if (!style || style.deleted_at || Number(style.active ?? 1) !== 1) throw new Error('该款式不存在或未启用评分');
@@ -1218,6 +1243,7 @@ function createKVStorage(env) {
           review_date: reviewDate,
           submission_id: submissionId,
           submitted_at: submittedAt,
+          review_link_code: normalizeReviewLinkCode(data.review_link_code || reviewLinkCode),
           style_id: style.id,
           product_image: data.product_image || style.product_image || '',
           style_code: data.style_code || style.style_code,
@@ -1228,11 +1254,12 @@ function createKVStorage(env) {
           deleted_at: null
         }, fields);
       });
-      await putJson(keySubmissionDay(reviewerName, reviewDate), {
+      await putJson(keySubmissionDay(reviewerName, reviewDate, reviewLinkCode), {
         reviewer: reviewerName,
         review_date: reviewDate,
         submission_id: submissionId,
-        submitted_at: submittedAt
+        submitted_at: submittedAt,
+        review_link_code: reviewLinkCode
       }, { expirationTtl: Math.max(60, 48 * 60 * 60) });
       const ids = await getIndex('scores');
       await Promise.all(rows.map(row => putJson(keyScore(row.id), row)));
@@ -1265,7 +1292,7 @@ function createKVStorage(env) {
       if (!old || old.deleted_at) throw new Error('评分记录不存在');
       await putJson(keyScore(String(id)), { ...old, deleted_at: now(), updated_at: now() });
       await addScoreHistory(id, 'delete', old);
-      await refreshDailySubmissionMarker(old.reviewer, old.review_date);
+      await refreshDailySubmissionMarker(old.reviewer, old.review_date, old.review_link_code || '');
       return true;
     },
     async getScoreHistory(id) { return getJson(keyScoreHistory(String(id)), []); },

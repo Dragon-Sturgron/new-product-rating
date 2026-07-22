@@ -1815,3 +1815,5 @@ button.disabled {
   .selected-style-preview { max-height: 180px; }
   .link-url-cell code { max-width: 220px; }
 }
+
+.link-table .select-col { width: 84px; }
