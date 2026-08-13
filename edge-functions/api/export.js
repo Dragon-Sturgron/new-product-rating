@@ -152,7 +152,7 @@ function summaryStylesXml() {
     </border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="9">
+  <cellXfs count="11">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
@@ -162,6 +162,8 @@ function summaryStylesXml() {
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="0"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="0"/></xf>
   </cellXfs>
 </styleSheet>`;
 }
@@ -218,21 +220,15 @@ function summaryCellXml(ref, value, style = 0, numeric = false) {
 }
 
 function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
-  const reviewerList = String(metadata.reviewers || '').split('、').map(item => item.trim()).filter(Boolean);
-  const reviewerSlots = Array.from({ length: 6 }, () => ''); // C1:H1
-  reviewerList.forEach((name, index) => {
-    if (index < 5) reviewerSlots[index] = name;
-    else reviewerSlots[5] = reviewerSlots[5] ? `${reviewerSlots[5]}、${name}` : name;
-  });
+  const reviewerText = String(metadata.reviewers || '').split('、').map(item => item.trim()).filter(Boolean).join('、');
   const top1Cells = [
     summaryCellXml('B1', '评分人', 1),
-    ...reviewerSlots.map((value, index) => summaryCellXml(`${columnName(index + 2)}1`, value, 3)),
+    summaryCellXml('C1', reviewerText, 9),
     summaryCellXml('I1', '评分日期', 1),
-    summaryCellXml('J1', metadata.dateLabel || '', 3)
+    summaryCellXml('J1', metadata.dateLabel || '', 10)
   ].join('');
   const top2Cells = [
-    summaryCellXml('F2', '评分规则', 1),
-    summaryCellXml('G2', metadata.ruleLine || '', 2)
+    summaryCellXml('G2', metadata.ruleLine || '', 9)
   ].join('');
   const headers = [
     '图片', '款式编码', '价格', '综合评分-\n价格竞争力', '综合评分-\n外观设计', '综合评分-\n工艺细节',
@@ -240,10 +236,9 @@ function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
   ];
   const headerCells = headers.map((value, i) => summaryCellXml(`${columnName(i)}3`, value, (i === 8 || i === 10) ? 5 : 4)).join('');
 
-  const top1Values = ['', '评分人', ...reviewerSlots, '评分日期', metadata.dateLabel || '', ''];
-  const top1Height = adaptiveRowHeight(top1Values, SUMMARY_COLUMN_WIDTHS, { min: 22, max: 44, lineHeight: 15, padding: 7 });
-  const top2Values = ['', '', '', '', '', '评分规则', metadata.ruleLine || '', '', '', '', ''];
-  const top2Height = adaptiveRowHeight(top2Values, SUMMARY_COLUMN_WIDTHS, { min: 22, max: 64, lineHeight: 15, padding: 7 });
+  // 评分人和评分规则都按单行显示，不自动换行，因此顶部两行保持紧凑固定高度。
+  const top1Height = 22;
+  const top2Height = 22;
   const headerHeight = adaptiveRowHeight(headers, SUMMARY_COLUMN_WIDTHS, { min: 34, max: 54, lineHeight: 16, padding: 8 });
 
   const bodyRows = dataRows.map((row, index) => {
