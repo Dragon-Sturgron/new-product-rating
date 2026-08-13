@@ -257,44 +257,149 @@ export async function onRequestGet({ request, env }) {
       return item ? `${item.total}/${item.max}` : '';
     }
 
-    const headers = [
-      '产品图',
-      '款式编码',
-      '季节',
-      '基本售价',
-      '价格竞争力',
-      '外观设计',
-      '工艺细节',
-      '容量收纳',
-      '背负舒适度、材质触感',
-      '备注',
-      '设计师宣讲',
-      '综合评分总分',
-      '独立评分总分',
-      '评分人',
-      '评分链接',
-      '评分日期'
-    ];
-    const rows = scores.map(score => [
-      score.product_image,
-      score.style_code,
-      score.season,
-      score.base_price,
-      ...fixedScoreColumns.slice(0, 5).map(label => findScoreValue(score, label)),
-      score.remark,
-      findScoreValue(score, '设计师宣讲'),
-      findSystemTotal(score, '综合评分总分'),
-      findSystemTotal(score, '独立评分总分'),
-      score.reviewer,
-      score.review_link_code || '',
-      score.review_date || score.created_at || ''
-    ]);
+    function averageNumbers(values) {
+      const nums = values.map(value => Number(value)).filter(value => Number.isFinite(value));
+      if (!nums.length) return '';
+      const avg = nums.reduce((sum, value) => sum + value, 0) / nums.length;
+      return (Math.round((avg + Number.EPSILON) * 10) / 10).toFixed(1);
+    }
+    function findSystemTotalNumber(score, label) {
+      const target = normalizeExportLabel(label).replace(/总分$/, '').replace(/平均分$/, '');
+      const systems = scoreSystemSummaries(score.score_items || [], gradeRules);
+      const item = systems.find(entry => normalizeExportLabel(entry.label) === target || normalizeExportLabel(entry.id) === target);
+      return item ? Number(item.total || 0) : null;
+    }
+    function scoreDate(score) {
+      const raw = String(score.review_date || score.submitted_at || score.created_at || '').trim();
+      return raw ? raw.slice(0, 10) : '';
+    }
+    function buildSummaryGroups(items) {
+      const groups = new Map();
+      for (const score of items || []) {
+        const styleId = String(score.style_id || '').trim();
+        const styleCode = String(score.style_code || '').trim();
+        const key = styleId ? `id:${styleId}` : `code:${styleCode}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            product_image: score.product_image || '',
+            style_code: styleCode,
+            season: score.season || '',
+            base_price: score.base_price ?? '',
+            scores: [],
+            reviewers: new Set(),
+            reviewLinks: new Set(),
+            dates: new Set(),
+            remarks: []
+          });
+        }
+        const group = groups.get(key);
+        group.scores.push(score);
+        if (!group.product_image && score.product_image) group.product_image = score.product_image;
+        if (!group.season && score.season) group.season = score.season;
+        if ((group.base_price === '' || group.base_price == null) && score.base_price != null) group.base_price = score.base_price;
+        const reviewer = String(score.reviewer || '').trim();
+        const reviewLink = String(score.review_link_code || '').trim();
+        const date = scoreDate(score);
+        const remark = String(score.remark || '').trim();
+        if (reviewer) group.reviewers.add(reviewer);
+        if (reviewLink) group.reviewLinks.add(reviewLink);
+        if (date) group.dates.add(date);
+        if (remark) group.remarks.push(reviewer ? `${reviewer}：${remark}` : remark);
+      }
+      return Array.from(groups.values());
+    }
+
+    const mode = String(url.searchParams.get('mode') || 'detail').toLowerCase();
+    let headers;
+    let rows;
+    let filename;
+    let fallbackFilename;
+
+    if (mode === 'summary') {
+      headers = [
+        '产品图',
+        '款式编码',
+        '季节',
+        '基本售价',
+        '价格竞争力平均分',
+        '外观设计平均分',
+        '工艺细节平均分',
+        '容量收纳平均分',
+        '背负舒适度、材质触感平均分',
+        '备注',
+        '设计师宣讲平均分',
+        '综合评分平均分',
+        '独立评分平均分',
+        '评分人数',
+        '评分人',
+        '评分链接',
+        '评分日期'
+      ];
+      rows = buildSummaryGroups(scores).map(group => {
+        const averageItem = label => averageNumbers(group.scores.map(score => findScoreValue(score, label)).filter(value => value !== '' && value != null));
+        const averageSystem = label => averageNumbers(group.scores.map(score => findSystemTotalNumber(score, label)).filter(value => value != null));
+        return [
+          group.product_image,
+          group.style_code,
+          group.season,
+          group.base_price,
+          ...fixedScoreColumns.slice(0, 5).map(label => averageItem(label)),
+          Array.from(new Set(group.remarks)).join('\n'),
+          averageItem('设计师宣讲'),
+          averageSystem('综合评分总分'),
+          averageSystem('独立评分总分'),
+          group.reviewers.size,
+          Array.from(group.reviewers).join('、'),
+          Array.from(group.reviewLinks).join('、'),
+          Array.from(group.dates).sort().join('、')
+        ];
+      });
+      filename = '评分结果-汇总平均.xlsx';
+      fallbackFilename = 'score-results-summary.xlsx';
+    } else {
+      headers = [
+        '产品图',
+        '款式编码',
+        '季节',
+        '基本售价',
+        '价格竞争力',
+        '外观设计',
+        '工艺细节',
+        '容量收纳',
+        '背负舒适度、材质触感',
+        '备注',
+        '设计师宣讲',
+        '综合评分总分',
+        '独立评分总分',
+        '评分人',
+        '评分链接',
+        '评分日期'
+      ];
+      rows = scores.map(score => [
+        score.product_image,
+        score.style_code,
+        score.season,
+        score.base_price,
+        ...fixedScoreColumns.slice(0, 5).map(label => findScoreValue(score, label)),
+        score.remark,
+        findScoreValue(score, '设计师宣讲'),
+        findSystemTotal(score, '综合评分总分'),
+        findSystemTotal(score, '独立评分总分'),
+        score.reviewer,
+        score.review_link_code || '',
+        score.review_date || score.created_at || ''
+      ]);
+      filename = '评分结果.xlsx';
+      fallbackFilename = 'score-results.xlsx';
+    }
+
     const xlsx = buildXlsx([headers, ...rows]);
-    const encodedFilename = encodeURIComponent('评分结果.xlsx');
+    const encodedFilename = encodeURIComponent(filename);
     return new Response(xlsx, {
       headers: {
         'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'content-disposition': `attachment; filename="score-results.xlsx"; filename*=UTF-8''${encodedFilename}`,
+        'content-disposition': `attachment; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`,
         'cache-control': 'no-store'
       }
     });

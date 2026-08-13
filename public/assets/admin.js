@@ -1146,8 +1146,9 @@ function updateScoreSelectAllState() {
 function selectedScoreGroups() {
   return scoreGroups.filter(group => selectedScoreGroupKeys.has(group.key));
 }
-function triggerScoreExport() {
+function triggerScoreExport(mode = 'detail') {
   const params = new URLSearchParams(new FormData(scoreSearchForm));
+  params.set('mode', mode === 'summary' ? 'summary' : 'detail');
   const selected = selectedScoreGroups();
   if (selected.length) {
     const submissionIds = [];
@@ -1160,13 +1161,66 @@ function triggerScoreExport() {
     if (submissionIds.length) params.set('submission_ids', submissionIds.join(','));
     if (legacyScoreIds.length) params.set('score_ids', legacyScoreIds.join(','));
   }
-  const href = params.toString() ? `/api/export?${params.toString()}` : '/api/export';
+  const href = `/api/export?${params.toString()}`;
   const link = document.createElement('a');
   link.href = href;
   link.download = '';
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+function showScoreExportDialog() {
+  const host = ensureDialogHost();
+  const selectedCount = selectedScoreGroups().length;
+  const scopeText = selectedCount
+    ? `当前已勾选 ${selectedCount} 次提交，两种导出方式都只处理勾选内容。`
+    : '当前没有勾选评分结果，两种导出方式都会处理当前筛选条件下的全部结果。';
+  host.innerHTML = `
+    <div class="modal-backdrop" data-export-backdrop>
+      <div class="confirm-dialog export-mode-dialog" role="dialog" aria-modal="true" aria-labelledby="exportModeDialogTitle">
+        <div class="confirm-icon info">导</div>
+        <div class="confirm-body export-mode-body">
+          <h3 id="exportModeDialogTitle">选择导出方式</h3>
+          <p>${escapeHtml(scopeText)}</p>
+          <div class="export-mode-options">
+            <button class="export-mode-card primary-mode" type="button" data-export-mode="summary">
+              <strong>汇总平均导出</strong>
+              <span>按款式合并，每个评分项把所有评分人的分数相加后取平均，每个款式只导出一行。</span>
+            </button>
+            <button class="export-mode-card" type="button" data-export-mode="detail">
+              <strong>原始明细导出</strong>
+              <span>保留原来的导出逻辑，每个评分人的每条款式评分分别导出，不做合并平均。</span>
+            </button>
+          </div>
+        </div>
+        <div class="confirm-actions export-mode-actions">
+          <button class="ghost" type="button" data-export-cancel>取消</button>
+        </div>
+      </div>
+    </div>`;
+
+  const backdrop = host.querySelector('[data-export-backdrop]');
+  const close = () => {
+    document.removeEventListener('keydown', onKeyDown);
+    host.innerHTML = '';
+  };
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') close();
+  };
+  host.querySelector('[data-export-cancel]')?.addEventListener('click', close);
+  backdrop?.addEventListener('click', (event) => {
+    if (event.target === backdrop) close();
+  });
+  host.querySelectorAll('[data-export-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.exportMode === 'summary' ? 'summary' : 'detail';
+      close();
+      triggerScoreExport(mode);
+    });
+  });
+  document.addEventListener('keydown', onKeyDown);
+  window.setTimeout(() => host.querySelector('[data-export-mode="summary"]')?.focus(), 20);
 }
 
 function renderScores() {
@@ -2531,7 +2585,7 @@ $('#clearScoreSearchBtn').addEventListener('click', async (event) => {
   try { await loadScores(); } finally { setButtonBusy(event.currentTarget, false); }
 });
 if (exportBtn) {
-  exportBtn.addEventListener('click', () => triggerScoreExport());
+  exportBtn.addEventListener('click', showScoreExportDialog);
 }
 document.addEventListener('change', (event) => {
   const selectAll = event.target.closest('[data-score-select-all]');
