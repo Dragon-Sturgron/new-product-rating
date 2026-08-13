@@ -125,6 +125,226 @@ function stylesXml() {
 </styleSheet>`;
 }
 
+
+const SUMMARY_COLUMN_WIDTHS = [13, 16, 10, 15, 15, 15, 15, 20, 11, 22, 18];
+const SUMMARY_MAIN_LABELS = ['价格竞争力', '外观设计', '工艺细节', '容量收纳', '背负舒适度、材质触感'];
+
+function summaryStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="Microsoft YaHei"/></font>
+    <font><b/><sz val="11"/><name val="Microsoft YaHei"/></font>
+  </fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FF000000"/></left>
+      <right style="thin"><color rgb="FF000000"/></right>
+      <top style="thin"><color rgb="FF000000"/></top>
+      <bottom style="thin"><color rgb="FF000000"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="9">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+  </cellXfs>
+</styleSheet>`;
+}
+
+function scoreRuleLine(gradeRules, maxTotal = 50) {
+  const rules = Array.isArray(gradeRules?.rules) ? gradeRules.rules.slice().sort((a, b) => Number(b.min_percent || 0) - Number(a.min_percent || 0)) : [];
+  if (!rules.length) return String(gradeRules?.description || '');
+  const max = Number(maxTotal) || 50;
+  const point = percent => Math.round((max * Number(percent || 0) / 100) * 10) / 10;
+  const fmt = value => Number.isInteger(value) ? String(value) : String(value).replace(/\.0$/, '');
+  const parts = [];
+  for (let i = 0; i < rules.length; i += 1) {
+    const rule = rules[i];
+    const lower = point(rule.min_percent);
+    if (i === 0) parts.push(`${fmt(max)}-${fmt(lower)}分${rule.label}`);
+    else if (i < rules.length - 1) parts.push(`${fmt(point(rules[i - 1].min_percent))}-${fmt(lower)}分${rule.label}`);
+    else parts.push(`${fmt(point(rules[i - 1].min_percent))}分以下${rule.label}`);
+  }
+  return parts.join('、');
+}
+
+function compactDateLabel(values = []) {
+  const list = Array.from(new Set(values.filter(Boolean))).sort();
+  const format = value => {
+    const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return String(value || '');
+    return `${Number(m[2])}月${Number(m[3])}日`;
+  };
+  if (!list.length) return '';
+  if (list.length <= 3) return list.map(format).join('、');
+  return `${format(list[0])} - ${format(list[list.length - 1])}`;
+}
+
+function summaryCellXml(ref, value, style = 0, numeric = false) {
+  if (numeric && value !== '' && value !== null && value !== undefined && Number.isFinite(Number(value))) {
+    return `<c r="${ref}" s="${style}"><v>${Number(value)}</v></c>`;
+  }
+  return `<c r="${ref}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+}
+
+function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
+  const top1 = [
+    summaryCellXml('A1', '', 0),
+    summaryCellXml('B1', '评分人', 1),
+    summaryCellXml('C1', metadata.reviewers || '', 2),
+    summaryCellXml('I1', '评分日期', 1),
+    summaryCellXml('J1', metadata.dateLabel || '', 2)
+  ].join('');
+  const top2 = summaryCellXml('C2', metadata.ruleLine || '', 3);
+  const headers = [
+    '图片', '款式编码', '价格', '综合评分-\n价格竞争力', '综合评分-\n外观设计', '综合评分-\n工艺细节',
+    '综合评分-\n容量收纳', '综合评分-\n背负舒适度、材质触感', '平均分', '备注', '设计师宣讲\n平均分'
+  ];
+  const headerCells = headers.map((value, i) => summaryCellXml(`${columnName(i)}3`, value, (i === 8 || i === 10) ? 5 : 4)).join('');
+  const bodyRows = dataRows.map((row, index) => {
+    const r = index + 4;
+    const cells = row.values.map((value, i) => {
+      const yellow = i === 8 || i === 10;
+      const remark = i === 9;
+      const style = yellow ? 7 : (remark ? 8 : 6);
+      const numeric = [2,3,4,5,6,7,8,10].includes(i);
+      return summaryCellXml(`${columnName(i)}${r}`, value, style, numeric);
+    }).join('');
+    return `<row r="${r}" ht="78" customHeight="1">${cells}</row>`;
+  }).join('');
+  const cols = `<cols>${SUMMARY_COLUMN_WIDTHS.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`;
+  const drawing = hasDrawing ? '<drawing r:id="rId1"/>' : '';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  ${cols}
+  <sheetData>
+    <row r="1" ht="25" customHeight="1">${top1}</row>
+    <row r="2" ht="28" customHeight="1">${top2}</row>
+    <row r="3" ht="48" customHeight="1">${headerCells}</row>
+    ${bodyRows}
+  </sheetData>
+  <mergeCells count="3"><mergeCell ref="C1:H1"/><mergeCell ref="J1:K1"/><mergeCell ref="C2:K2"/></mergeCells>
+  <pageMargins left="0.25" right="0.25" top="0.4" bottom="0.4" header="0.2" footer="0.2"/>
+  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/>
+  ${drawing}
+</worksheet>`;
+}
+
+function summaryContentTypesXml(images = []) {
+  const extensions = new Map();
+  for (const image of images) extensions.set(image.ext, image.contentType);
+  const imageDefaults = Array.from(extensions.entries()).map(([ext, type]) => `<Default Extension="${ext}" ContentType="${type}"/>`).join('\n  ');
+  const drawingOverride = images.length ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : '';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${imageDefaults}
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  ${drawingOverride}
+</Types>`;
+}
+
+function summarySheetRelsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`;
+}
+
+function summaryDrawingXml(images = []) {
+  const anchors = images.map((image, index) => {
+    const rid = `rId${index + 1}`;
+    const id = index + 1;
+    const row = image.dataRowIndex + 3; // zero-based Excel row: data starts at row 4
+    return `<xdr:oneCellAnchor>
+      <xdr:from><xdr:col>0</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>47625</xdr:rowOff></xdr:from>
+      <xdr:ext cx="952500" cy="666750"/>
+      <xdr:pic>
+        <xdr:nvPicPr><xdr:cNvPr id="${id}" name="产品图 ${id}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>
+        <xdr:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
+        <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="666750"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln><a:noFill/></a:ln></xdr:spPr>
+      </xdr:pic>
+      <xdr:clientData/>
+    </xdr:oneCellAnchor>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${anchors}</xdr:wsDr>`;
+}
+
+function summaryDrawingRelsXml(images = []) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${images.map((image, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${image.filename}"/>`).join('\n  ')}
+</Relationships>`;
+}
+
+async function fetchSummaryImages(dataRows, requestUrl) {
+  const images = [];
+  for (let i = 0; i < dataRows.length; i += 1) {
+    const raw = String(dataRows[i].imageUrl || '').trim();
+    if (!raw) continue;
+    try {
+      const target = new URL(raw, requestUrl).toString();
+      const response = await fetch(target, { headers: { accept: 'image/png,image/jpeg,image/jpg,*/*;q=0.5' } });
+      if (!response.ok) continue;
+      const contentTypeRaw = String(response.headers.get('content-type') || '').toLowerCase();
+      let ext = '';
+      let contentType = '';
+      if (contentTypeRaw.includes('png')) { ext = 'png'; contentType = 'image/png'; }
+      else if (contentTypeRaw.includes('jpeg') || contentTypeRaw.includes('jpg')) { ext = 'jpg'; contentType = 'image/jpeg'; }
+      else {
+        const pathname = new URL(target).pathname.toLowerCase();
+        if (/\.png$/.test(pathname)) { ext = 'png'; contentType = 'image/png'; }
+        else if (/\.jpe?g$/.test(pathname)) { ext = 'jpg'; contentType = 'image/jpeg'; }
+      }
+      if (!ext) continue;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!bytes.length || bytes.length > 8 * 1024 * 1024) continue;
+      const filename = `image${images.length + 1}.${ext}`;
+      images.push({ filename, ext, contentType, bytes, dataRowIndex: i });
+    } catch (_) {}
+  }
+  return images;
+}
+
+async function buildSummaryXlsx(dataRows, metadata, requestUrl) {
+  const images = await fetchSummaryImages(dataRows, requestUrl);
+  const files = [
+    { name: '[Content_Types].xml', content: summaryContentTypesXml(images) },
+    { name: '_rels/.rels', content: rootRelsXml() },
+    { name: 'xl/workbook.xml', content: workbookXml() },
+    { name: 'xl/_rels/workbook.xml.rels', content: workbookRelsXml() },
+    { name: 'xl/styles.xml', content: summaryStylesXml() },
+    { name: 'xl/worksheets/sheet1.xml', content: summaryWorksheetXml(dataRows, metadata, images.length > 0) }
+  ];
+  if (images.length) {
+    files.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', content: summarySheetRelsXml() });
+    files.push({ name: 'xl/drawings/drawing1.xml', content: summaryDrawingXml(images) });
+    files.push({ name: 'xl/drawings/_rels/drawing1.xml.rels', content: summaryDrawingRelsXml(images) });
+    for (const image of images) files.push({ name: `xl/media/${image.filename}`, content: image.bytes });
+  }
+  return createZip(files);
+}
+
 let crcTable = null;
 function crc32(bytes) {
   if (!crcTable) {
@@ -331,46 +551,58 @@ export async function onRequestGet({ request, env }) {
     let fallbackFilename;
 
     if (mode === 'summary') {
-      headers = [
-        '产品图',
-        '款式编码',
-        '季节',
-        '基本售价',
-        '价格竞争力平均分',
-        '外观设计平均分',
-        '工艺细节平均分',
-        '容量收纳平均分',
-        '背负舒适度、材质触感平均分',
-        '备注',
-        '设计师宣讲平均分',
-        '综合评分平均分',
-        '独立评分平均分',
-        '评分人数',
-        '评分人',
-        '评分链接',
-        '评分日期'
-      ];
-      rows = buildSummaryGroups(scores).map(group => {
-        const averageItem = label => averageNumbers(group.scores.map(score => findScoreValue(score, label)).filter(value => value !== '' && value != null));
-        const averageSystem = label => averageNumbers(group.scores.map(score => findSystemTotalNumber(score, label)).filter(value => value != null));
-        return [
-          group.product_image,
-          group.style_code,
-          group.season,
-          group.base_price,
-          ...fixedScoreColumns.slice(0, 5).map(label => averageItem(label)),
-          Array.from(new Set(group.remarks)).join('\n'),
-          averageItem('设计师宣讲'),
-          averageSystem('综合评分总分'),
-          averageSystem('独立评分总分'),
-          group.reviewers.size,
-          Array.from(group.reviewers).join('、'),
-          Array.from(group.reviewLinks).join('、'),
-          Array.from(group.dates).sort().join('、')
-        ];
+      const groups = buildSummaryGroups(scores);
+      const summaryRows = groups.map(group => {
+        const averageItemNumber = label => {
+          const values = group.scores.map(score => findScoreValue(score, label)).filter(value => value !== '' && value != null).map(Number).filter(Number.isFinite);
+          if (!values.length) return '';
+          return Math.round(((values.reduce((sum, value) => sum + value, 0) / values.length) + Number.EPSILON) * 10) / 10;
+        };
+        const itemAverages = SUMMARY_MAIN_LABELS.map(label => averageItemNumber(label));
+        const validMain = itemAverages.filter(value => value !== '' && value != null && Number.isFinite(Number(value)));
+        const totalAverage = validMain.length ? Math.round((validMain.reduce((sum, value) => sum + Number(value), 0) + Number.EPSILON) * 10) / 10 : '';
+        const designerAverage = averageItemNumber('设计师宣讲');
+        return {
+          imageUrl: group.product_image,
+          values: [
+            '',
+            group.style_code,
+            group.base_price,
+            ...itemAverages,
+            totalAverage,
+            Array.from(new Set(group.remarks)).join('\n'),
+            designerAverage
+          ]
+        };
       });
+      const allReviewers = Array.from(new Set(scores.map(score => String(score.reviewer || '').trim()).filter(Boolean)));
+      const allDates = scores.map(scoreDate).filter(Boolean);
+      const mainMax = (() => {
+        const first = groups.flatMap(group => group.scores || [])[0];
+        if (!first) return 50;
+        const values = SUMMARY_MAIN_LABELS.map(label => {
+          const target = normalizeExportLabel(label);
+          const item = (first.score_items || []).find(entry => normalizeExportLabel(entry.label) === target);
+          return item ? normalizeMaxScore(item.max_score) : 10;
+        });
+        return values.reduce((sum, value) => sum + Number(value || 0), 0) || 50;
+      })();
+      const metadata = {
+        reviewers: allReviewers.join('、'),
+        dateLabel: compactDateLabel(allDates),
+        ruleLine: scoreRuleLine(gradeRules, mainMax)
+      };
+      const xlsx = await buildSummaryXlsx(summaryRows, metadata, request.url);
       filename = '评分结果-汇总平均.xlsx';
       fallbackFilename = 'score-results-summary.xlsx';
+      const encodedFilename = encodeURIComponent(filename);
+      return new Response(xlsx, {
+        headers: {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': `attachment; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`,
+          'cache-control': 'no-store'
+        }
+      });
     } else {
       headers = [
         '产品图',
