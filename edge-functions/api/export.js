@@ -126,7 +126,7 @@ function stylesXml() {
 }
 
 
-const SUMMARY_COLUMN_WIDTHS = [13, 16, 10, 15, 15, 15, 15, 20, 11, 22, 18];
+const SUMMARY_COLUMN_WIDTHS = [13, 16, 10, 15, 15, 15, 15, 20, 11, 30, 18];
 const SUMMARY_MAIN_LABELS = ['价格竞争力', '外观设计', '工艺细节', '容量收纳', '背负舒适度、材质触感'];
 
 function summaryStylesXml() {
@@ -225,7 +225,9 @@ function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
       const numeric = [2,3,4,5,6,7,8,10].includes(i);
       return summaryCellXml(`${columnName(i)}${r}`, value, style, numeric);
     }).join('');
-    return `<row r="${r}" ht="78" customHeight="1">${cells}</row>`;
+    const remarkLines = Math.max(1, String(row.values?.[9] || '').split('\n').filter(Boolean).length);
+    const rowHeight = Math.max(78, 22 + remarkLines * 20);
+    return `<row r="${r}" ht="${rowHeight}" customHeight="1">${cells}</row>`;
   }).join('');
   const cols = `<cols>${SUMMARY_COLUMN_WIDTHS.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`;
   const drawing = hasDrawing ? '<drawing r:id="rId1"/>' : '';
@@ -524,7 +526,7 @@ export async function onRequestGet({ request, env }) {
             reviewers: new Set(),
             reviewLinks: new Set(),
             dates: new Set(),
-            remarks: []
+            remarksByReviewer: new Map()
           });
         }
         const group = groups.get(key);
@@ -539,7 +541,12 @@ export async function onRequestGet({ request, env }) {
         if (reviewer) group.reviewers.add(reviewer);
         if (reviewLink) group.reviewLinks.add(reviewLink);
         if (date) group.dates.add(date);
-        if (remark) group.remarks.push(reviewer ? `${reviewer}：${remark}` : remark);
+        if (remark) {
+          const reviewerLabel = reviewer || '未命名';
+          if (!group.remarksByReviewer.has(reviewerLabel)) group.remarksByReviewer.set(reviewerLabel, []);
+          const reviewerRemarks = group.remarksByReviewer.get(reviewerLabel);
+          if (!reviewerRemarks.includes(remark)) reviewerRemarks.push(remark);
+        }
       }
       return Array.from(groups.values());
     }
@@ -570,7 +577,7 @@ export async function onRequestGet({ request, env }) {
             group.base_price,
             ...itemAverages,
             totalAverage,
-            Array.from(new Set(group.remarks)).join('\n'),
+            Array.from(group.remarksByReviewer.entries()).map(([reviewer, remarks]) => `${reviewer}：${remarks.join('；')}`).join('\n'),
             designerAverage
           ]
         };
