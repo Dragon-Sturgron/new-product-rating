@@ -185,14 +185,29 @@ function scoreRuleLine(gradeRules, maxTotal = 50) {
 
 function compactDateLabel(values = []) {
   const list = Array.from(new Set(values.filter(Boolean))).sort();
-  const format = value => {
-    const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return String(value || '');
-    return `${Number(m[2])}月${Number(m[3])}日`;
-  };
-  if (!list.length) return '';
-  if (list.length <= 3) return list.map(format).join('、');
-  return `${format(list[0])} - ${format(list[list.length - 1])}`;
+  const latest = list[list.length - 1] || '';
+  if (!latest) return '';
+  const m = String(latest).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(latest);
+  return `${Number(m[2])}月${Number(m[3])}日`;
+}
+
+function estimateWrappedLines(value, width = 12) {
+  const text = String(value ?? '');
+  if (!text) return 1;
+  const charsPerLine = Math.max(4, Math.floor(Number(width || 12) * 0.9));
+  return text.split('\n').reduce((total, part) => {
+    const length = Array.from(part || ' ').reduce((sum, char) => sum + (/[^\x00-\xff]/.test(char) ? 1 : 0.55), 0);
+    return total + Math.max(1, Math.ceil(length / charsPerLine));
+  }, 0);
+}
+
+function adaptiveRowHeight(values = [], widths = [], { min = 20, max = 90, lineHeight = 16, padding = 8 } = {}) {
+  let lines = 1;
+  values.forEach((value, index) => {
+    lines = Math.max(lines, estimateWrappedLines(value, widths[index] || 12));
+  });
+  return Math.max(min, Math.min(max, padding + lines * lineHeight));
 }
 
 function summaryCellXml(ref, value, style = 0, numeric = false) {
@@ -203,19 +218,34 @@ function summaryCellXml(ref, value, style = 0, numeric = false) {
 }
 
 function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
-  const top1 = [
-    summaryCellXml('A1', '', 0),
+  const reviewerList = String(metadata.reviewers || '').split('、').map(item => item.trim()).filter(Boolean);
+  const reviewerSlots = Array.from({ length: 6 }, () => ''); // C1:H1
+  reviewerList.forEach((name, index) => {
+    if (index < 5) reviewerSlots[index] = name;
+    else reviewerSlots[5] = reviewerSlots[5] ? `${reviewerSlots[5]}、${name}` : name;
+  });
+  const top1Cells = [
     summaryCellXml('B1', '评分人', 1),
-    summaryCellXml('C1', metadata.reviewers || '', 2),
+    ...reviewerSlots.map((value, index) => summaryCellXml(`${columnName(index + 2)}1`, value, 3)),
     summaryCellXml('I1', '评分日期', 1),
-    summaryCellXml('J1', metadata.dateLabel || '', 2)
+    summaryCellXml('J1', metadata.dateLabel || '', 3)
   ].join('');
-  const top2 = summaryCellXml('C2', metadata.ruleLine || '', 3);
+  const top2Cells = [
+    summaryCellXml('F2', '评分规则', 1),
+    summaryCellXml('G2', metadata.ruleLine || '', 2)
+  ].join('');
   const headers = [
     '图片', '款式编码', '价格', '综合评分-\n价格竞争力', '综合评分-\n外观设计', '综合评分-\n工艺细节',
     '综合评分-\n容量收纳', '综合评分-\n背负舒适度、材质触感', '平均分', '备注', '设计师宣讲\n平均分'
   ];
   const headerCells = headers.map((value, i) => summaryCellXml(`${columnName(i)}3`, value, (i === 8 || i === 10) ? 5 : 4)).join('');
+
+  const top1Values = ['', '评分人', ...reviewerSlots, '评分日期', metadata.dateLabel || '', ''];
+  const top1Height = adaptiveRowHeight(top1Values, SUMMARY_COLUMN_WIDTHS, { min: 22, max: 44, lineHeight: 15, padding: 7 });
+  const top2Values = ['', '', '', '', '', '评分规则', metadata.ruleLine || '', '', '', '', ''];
+  const top2Height = adaptiveRowHeight(top2Values, SUMMARY_COLUMN_WIDTHS, { min: 22, max: 64, lineHeight: 15, padding: 7 });
+  const headerHeight = adaptiveRowHeight(headers, SUMMARY_COLUMN_WIDTHS, { min: 34, max: 54, lineHeight: 16, padding: 8 });
+
   const bodyRows = dataRows.map((row, index) => {
     const r = index + 4;
     const cells = row.values.map((value, i) => {
@@ -225,8 +255,8 @@ function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
       const numeric = [2,3,4,5,6,7,8,10].includes(i);
       return summaryCellXml(`${columnName(i)}${r}`, value, style, numeric);
     }).join('');
-    const remarkLines = Math.max(1, String(row.values?.[9] || '').split('\n').filter(Boolean).length);
-    const rowHeight = Math.max(78, 22 + remarkLines * 20);
+    const contentHeight = adaptiveRowHeight(row.values, SUMMARY_COLUMN_WIDTHS, { min: 24, max: 110, lineHeight: 15, padding: 8 });
+    const rowHeight = Math.max(56, contentHeight); // product image needs roughly 56pt; longer remarks can expand naturally
     return `<row r="${r}" ht="${rowHeight}" customHeight="1">${cells}</row>`;
   }).join('');
   const cols = `<cols>${SUMMARY_COLUMN_WIDTHS.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`;
@@ -236,12 +266,11 @@ function summaryWorksheetXml(dataRows, metadata, hasDrawing) {
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   ${cols}
   <sheetData>
-    <row r="1" ht="25" customHeight="1">${top1}</row>
-    <row r="2" ht="28" customHeight="1">${top2}</row>
-    <row r="3" ht="48" customHeight="1">${headerCells}</row>
+    <row r="1" ht="${top1Height}" customHeight="1">${top1Cells}</row>
+    <row r="2" ht="${top2Height}" customHeight="1">${top2Cells}</row>
+    <row r="3" ht="${headerHeight}" customHeight="1">${headerCells}</row>
     ${bodyRows}
   </sheetData>
-  <mergeCells count="3"><mergeCell ref="C1:H1"/><mergeCell ref="J1:K1"/><mergeCell ref="C2:K2"/></mergeCells>
   <pageMargins left="0.25" right="0.25" top="0.4" bottom="0.4" header="0.2" footer="0.2"/>
   <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/>
   ${drawing}
