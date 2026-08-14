@@ -232,29 +232,41 @@ function setupReviewDateTimePicker(host, input) {
   if (!host || !input) return () => {};
   const control = input.closest('[data-review-datetime-control]');
   if (!control) return () => {};
+
   let popover = null;
   let selectedDate = parseLocalDateTimeValue(input.value);
   let viewYear = selectedDate.getFullYear();
   let viewMonth = selectedDate.getMonth();
+  let viewMode = 'days';
+  let yearRangeStart = viewYear - 5;
 
   const pad = (n) => String(n).padStart(2, '0');
   const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
-  const renderCalendar = () => {
+  const monthNames = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
+
+  const renderTitle = () => {
     if (!popover) return;
-    const title = popover.querySelector('[data-datetime-month-title]');
-    if (title) title.textContent = `${viewYear}年 ${viewMonth + 1}月`;
-    const grid = popover.querySelector('[data-datetime-days]');
-    if (!grid) return;
-    const firstWeekday = new Date(viewYear, viewMonth, 1).getDay();
+    const title = popover.querySelector('[data-datetime-title-text]');
+    if (!title) return;
+    if (viewMode === 'days') title.textContent = `${viewYear}年 ${viewMonth + 1}月`;
+    else if (viewMode === 'months') title.textContent = `${viewYear}年`;
+    else title.textContent = `${yearRangeStart} - ${yearRangeStart + 11}`;
+  };
+
+  const renderDays = () => {
+    const body = popover?.querySelector('[data-datetime-calendar-body]');
+    if (!body) return;
+    const firstWeekdayMonday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
     const currentDays = daysInMonth(viewYear, viewMonth);
     const prevMonthDays = daysInMonth(viewYear, viewMonth - 1);
     const today = new Date();
     const cells = [];
+
     for (let i = 0; i < 42; i += 1) {
       let year = viewYear;
       let month = viewMonth;
-      let day = i - firstWeekday + 1;
+      let day = i - firstWeekdayMonday + 1;
       let outside = false;
       if (day <= 0) {
         month -= 1;
@@ -274,8 +286,52 @@ function setupReviewDateTimePicker(host, input) {
       if (sameDay(date, selectedDate)) classes.push('selected');
       cells.push(`<button type="button" class="${classes.join(' ')}" data-datetime-day="${year}-${pad(month + 1)}-${pad(day)}" aria-label="${year}年${month + 1}月${day}日">${day}</button>`);
     }
-    grid.innerHTML = cells.join('');
+
+    body.innerHTML = `
+      <div class="review-datetime-weekdays">
+        <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+      </div>
+      <div class="review-datetime-days" data-datetime-days>${cells.join('')}</div>`;
   };
+
+  const renderMonths = () => {
+    const body = popover?.querySelector('[data-datetime-calendar-body]');
+    if (!body) return;
+    body.innerHTML = `
+      <div class="review-datetime-month-grid">
+        ${monthNames.map((label, month) => {
+          const classes = ['review-datetime-choice'];
+          if (viewYear === selectedDate.getFullYear() && month === selectedDate.getMonth()) classes.push('selected');
+          if (viewYear === new Date().getFullYear() && month === new Date().getMonth()) classes.push('current');
+          return `<button type="button" class="${classes.join(' ')}" data-datetime-month="${month}">${label}</button>`;
+        }).join('')}
+      </div>`;
+  };
+
+  const renderYears = () => {
+    const body = popover?.querySelector('[data-datetime-calendar-body]');
+    if (!body) return;
+    const currentYear = new Date().getFullYear();
+    body.innerHTML = `
+      <div class="review-datetime-year-grid">
+        ${Array.from({ length: 12 }, (_, i) => yearRangeStart + i).map(year => {
+          const classes = ['review-datetime-choice', 'review-datetime-year-choice'];
+          if (year === selectedDate.getFullYear()) classes.push('selected');
+          if (year === currentYear) classes.push('current');
+          return `<button type="button" class="${classes.join(' ')}" data-datetime-year="${year}">${year}</button>`;
+        }).join('')}
+      </div>`;
+  };
+
+  const renderCalendar = () => {
+    if (!popover) return;
+    renderTitle();
+    if (viewMode === 'days') renderDays();
+    else if (viewMode === 'months') renderMonths();
+    else renderYears();
+    popover.dataset.viewMode = viewMode;
+  };
+
   const syncTimeControls = () => {
     if (!popover) return;
     const hour = popover.querySelector('[data-datetime-hour]');
@@ -283,61 +339,99 @@ function setupReviewDateTimePicker(host, input) {
     if (hour) hour.value = pad(selectedDate.getHours());
     if (minute) minute.value = pad(selectedDate.getMinutes());
   };
+
   const positionPopover = () => {
     if (!popover) return;
     const rect = control.getBoundingClientRect();
-    const width = Math.min(356, window.innerWidth - 24);
+    const viewportPadding = 12;
+    const width = Math.min(392, window.innerWidth - viewportPadding * 2);
     popover.style.width = `${width}px`;
+    popover.style.maxHeight = `${Math.max(300, window.innerHeight - viewportPadding * 2)}px`;
     popover.style.visibility = 'hidden';
     popover.style.display = 'block';
-    const height = popover.offsetHeight || 420;
-    const belowSpace = window.innerHeight - rect.bottom - 12;
-    const top = belowSpace >= Math.min(height, 420)
-      ? rect.bottom + 8
-      : Math.max(12, rect.top - height - 8);
-    const left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
+
+    const height = popover.offsetHeight || 430;
+    const belowSpace = window.innerHeight - rect.bottom - viewportPadding;
+    const aboveSpace = rect.top - viewportPadding;
+    let top;
+    if (belowSpace >= Math.min(height, 430) || belowSpace >= aboveSpace) top = rect.bottom + 8;
+    else top = rect.top - height - 8;
+    top = Math.max(viewportPadding, Math.min(top, window.innerHeight - Math.min(height, window.innerHeight - viewportPadding * 2) - viewportPadding));
+
+    let left = rect.right - width;
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - width - viewportPadding));
     popover.style.left = `${left}px`;
     popover.style.top = `${top}px`;
     popover.style.visibility = 'visible';
   };
+
   const closePicker = () => {
     if (!popover) return;
     popover.remove();
     popover = null;
     control.classList.remove('picker-open');
     document.removeEventListener('pointerdown', onDocumentPointerDown, true);
+    document.removeEventListener('keydown', onPickerKeyDown, true);
     window.removeEventListener('resize', positionPopover);
     window.removeEventListener('scroll', positionPopover, true);
   };
+
   const confirmPicker = () => {
     input.value = localDateTimeValue(selectedDate);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     closePicker();
-    input.focus({ preventScroll: true });
+    control.focus({ preventScroll: true });
   };
+
   const onDocumentPointerDown = (event) => {
     if (!popover) return;
     if (popover.contains(event.target) || control.contains(event.target)) return;
     closePicker();
   };
+
+  const onPickerKeyDown = (event) => {
+    if (event.key === 'Escape' && popover) {
+      event.preventDefault();
+      closePicker();
+    }
+  };
+
+  const navigate = (direction) => {
+    if (viewMode === 'days') {
+      viewMonth += direction;
+      if (viewMonth < 0) { viewMonth = 11; viewYear -= 1; }
+      if (viewMonth > 11) { viewMonth = 0; viewYear += 1; }
+    } else if (viewMode === 'months') {
+      viewYear += direction;
+    } else {
+      yearRangeStart += direction * 12;
+    }
+    renderCalendar();
+  };
+
   const openPicker = () => {
     if (popover) return;
     selectedDate = parseLocalDateTimeValue(input.value || formatLocalDateTimeInput());
     viewYear = selectedDate.getFullYear();
     viewMonth = selectedDate.getMonth();
+    viewMode = 'days';
+    yearRangeStart = viewYear - 5;
+
     popover = document.createElement('div');
     popover.className = 'review-datetime-popover';
     popover.setAttribute('role', 'dialog');
     popover.setAttribute('aria-label', '选择有效期日期和时间');
     popover.innerHTML = `
       <div class="review-datetime-popover-head">
-        <button type="button" class="review-datetime-nav" data-datetime-prev aria-label="上个月">‹</button>
-        <strong data-datetime-month-title></strong>
-        <button type="button" class="review-datetime-nav" data-datetime-next aria-label="下个月">›</button>
+        <button type="button" class="review-datetime-nav" data-datetime-prev aria-label="上一个">‹</button>
+        <button type="button" class="review-datetime-title" data-datetime-title aria-label="切换月份或年份选择">
+          <span data-datetime-title-text></span>
+          <span class="review-datetime-title-arrow" aria-hidden="true">⌄</span>
+        </button>
+        <button type="button" class="review-datetime-nav" data-datetime-next aria-label="下一个">›</button>
       </div>
-      <div class="review-datetime-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
-      <div class="review-datetime-days" data-datetime-days></div>
+      <div class="review-datetime-calendar-body" data-datetime-calendar-body></div>
       <div class="review-datetime-time-row">
         <span class="review-datetime-time-label">时间</span>
         <select data-datetime-hour aria-label="小时">${Array.from({ length: 24 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('')}</select>
@@ -351,12 +445,14 @@ function setupReviewDateTimePicker(host, input) {
           <button type="button" class="primary" data-datetime-confirm>确定</button>
         </div>
       </div>`;
+
     document.body.appendChild(popover);
     control.classList.add('picker-open');
     renderCalendar();
     syncTimeControls();
     positionPopover();
     window.requestAnimationFrame(() => popover?.classList.add('visible'));
+
     popover.addEventListener('click', (event) => {
       const dayBtn = event.target.closest('[data-datetime-day]');
       if (dayBtn) {
@@ -367,22 +463,45 @@ function setupReviewDateTimePicker(host, input) {
         renderCalendar();
         return;
       }
-      if (event.target.closest('[data-datetime-prev]')) {
-        viewMonth -= 1;
-        if (viewMonth < 0) { viewMonth = 11; viewYear -= 1; }
+
+      const monthBtn = event.target.closest('[data-datetime-month]');
+      if (monthBtn) {
+        viewMonth = Number(monthBtn.dataset.datetimeMonth || 0);
+        viewMode = 'days';
         renderCalendar();
         return;
       }
-      if (event.target.closest('[data-datetime-next]')) {
-        viewMonth += 1;
-        if (viewMonth > 11) { viewMonth = 0; viewYear += 1; }
+
+      const yearBtn = event.target.closest('[data-datetime-year]');
+      if (yearBtn) {
+        viewYear = Number(yearBtn.dataset.datetimeYear || viewYear);
+        viewMode = 'months';
         renderCalendar();
         return;
       }
+
+      if (event.target.closest('[data-datetime-title]')) {
+        if (viewMode === 'days') {
+          viewMode = 'months';
+        } else if (viewMode === 'months') {
+          viewMode = 'years';
+          yearRangeStart = viewYear - 5;
+        } else {
+          viewMode = 'days';
+        }
+        renderCalendar();
+        return;
+      }
+
+      if (event.target.closest('[data-datetime-prev]')) { navigate(-1); return; }
+      if (event.target.closest('[data-datetime-next]')) { navigate(1); return; }
+
       if (event.target.closest('[data-datetime-now]')) {
         selectedDate = new Date();
         viewYear = selectedDate.getFullYear();
         viewMonth = selectedDate.getMonth();
+        viewMode = 'days';
+        yearRangeStart = viewYear - 5;
         renderCalendar();
         syncTimeControls();
         return;
@@ -390,14 +509,20 @@ function setupReviewDateTimePicker(host, input) {
       if (event.target.closest('[data-datetime-cancel]')) { closePicker(); return; }
       if (event.target.closest('[data-datetime-confirm]')) confirmPicker();
     });
+
     popover.addEventListener('change', (event) => {
       if (event.target.matches('[data-datetime-hour]')) selectedDate.setHours(Number(event.target.value || 0));
       if (event.target.matches('[data-datetime-minute]')) selectedDate.setMinutes(Number(event.target.value || 0));
     });
-    window.setTimeout(() => document.addEventListener('pointerdown', onDocumentPointerDown, true), 0);
+
+    window.setTimeout(() => {
+      document.addEventListener('pointerdown', onDocumentPointerDown, true);
+      document.addEventListener('keydown', onPickerKeyDown, true);
+    }, 0);
     window.addEventListener('resize', positionPopover);
     window.addEventListener('scroll', positionPopover, true);
   };
+
   const onControlClick = (event) => {
     event.preventDefault();
     openPicker();
@@ -408,6 +533,7 @@ function setupReviewDateTimePicker(host, input) {
       openPicker();
     }
   };
+
   control.addEventListener('click', onControlClick);
   control.addEventListener('keydown', onControlKeyDown);
   return () => {

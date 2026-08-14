@@ -1969,45 +1969,43 @@ button.is-busy::before {
   .export-mode-actions button { width: auto; min-width: 100px; }
 }
 
-/* V19 评分链接有效期日期时间选择器 */
-.review-datetime-label {
-  min-width: 0;
-}
+/* V21 评分链接有效期日期时间选择器 */
+.review-datetime-label { min-width: 0; }
 .review-datetime-control {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 44px;
-  border: 1px solid #d8e1ee;
+  min-height: 46px;
+  border: 1px solid #d6e0ee;
   border-radius: 13px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  background: #fff;
   cursor: pointer;
-  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease, transform .16s ease;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
   overflow: hidden;
 }
 .review-datetime-control:hover {
-  border-color: #a9c6f6;
-  background: #f8fbff;
-  box-shadow: 0 6px 18px rgba(37, 99, 235, .07);
+  border-color: #9fbcf5;
+  background: #fbfdff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, .07);
 }
 .review-datetime-control:focus-visible,
 .review-datetime-control.picker-open {
   outline: none;
   border-color: #2563eb;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, .13), 0 8px 24px rgba(37, 99, 235, .08);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
 }
 .review-link-form-grid .review-datetime-input {
   width: 100%;
   min-width: 0;
-  height: 42px;
+  height: 44px;
   border: 0 !important;
   border-radius: 0;
-  padding: 0 46px 0 13px;
+  padding: 0 48px 0 14px;
   background: transparent;
   box-shadow: none !important;
-  color: #0f172a;
-  font-weight: 600;
+  color: #172033;
+  font-weight: 650;
   cursor: pointer;
   pointer-events: none;
   user-select: none;
@@ -2019,37 +2017,41 @@ button.is-busy::before {
 }
 .review-datetime-icon {
   position: absolute;
-  right: 10px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   color: #2563eb;
-  background: #eff6ff;
-  transition: background .16s ease, color .16s ease, transform .16s ease;
+  background: #edf4ff;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
   pointer-events: none;
 }
 .review-datetime-control:hover .review-datetime-icon,
 .review-datetime-control.picker-open .review-datetime-icon {
   color: #fff;
   background: #2563eb;
+  box-shadow: 0 5px 12px rgba(37, 99, 235, .24);
 }
 .review-datetime-popover {
   position: fixed;
   z-index: 30000;
   display: none;
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 14px;
-  border: 1px solid #dbe5f2;
+  border: 1px solid #dbe5f1;
   border-radius: 18px;
-  background: rgba(255,255,255,.985);
-  box-shadow: 0 22px 60px rgba(15, 23, 42, .22), 0 6px 20px rgba(37, 99, 235, .10);
+  background: rgba(255,255,255,.99);
+  box-shadow: 0 22px 55px rgba(15, 23, 42, .20), 0 5px 16px rgba(37, 99, 235, .08);
   opacity: 0;
-  transform: translateY(-5px) scale(.985);
-  transform-origin: top center;
-  transition: opacity .14s ease, transform .14s ease;
+  transform: translateY(-4px) scale(.99);
+  transform-origin: top right;
+  transition: opacity .13s ease, transform .13s ease;
   backdrop-filter: blur(12px);
 }
 .review-datetime-popover.visible {
@@ -2058,72 +2060,104 @@ button.is-busy::before {
 }
 .review-datetime-popover-head {
   display: grid;
-  grid-template-columns: 38px 1fr 38px;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
-}
-.review-datetime-popover-head strong {
-  text-align: center;
-  font-size: 15px;
-  color: #0f172a;
+  margin-bottom: 8px;
 }
 .review-datetime-nav {
+  display: grid;
+  place-items: center;
   width: 36px;
   height: 36px;
+  padding: 0;
   border: 0;
   border-radius: 10px;
-  background: #f3f7fc;
-  color: #334155;
-  font-size: 24px;
+  background: #f3f6fb;
+  color: #475569;
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  transition: background .15s ease, color .15s ease;
+  transition: background .14s ease, color .14s ease, transform .14s ease;
 }
 .review-datetime-nav:hover {
-  background: #e7f0ff;
+  background: #eaf2ff;
   color: #1d4ed8;
+  transform: translateY(-1px);
+}
+.review-datetime-title {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 132px;
+  max-width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.review-datetime-title:hover {
+  background: #f1f6ff;
+  color: #1d4ed8;
+}
+.review-datetime-title-arrow {
+  color: #7c8aa0;
+  font-size: 13px;
+  transform: translateY(-1px);
+}
+.review-datetime-calendar-body {
+  min-height: 244px;
 }
 .review-datetime-weekdays,
 .review-datetime-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
 }
-.review-datetime-weekdays {
-  margin-bottom: 4px;
-}
+.review-datetime-weekdays { margin-bottom: 4px; }
 .review-datetime-weekdays span {
   display: grid;
   place-items: center;
-  height: 26px;
+  height: 24px;
   color: #94a3b8;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
 }
+.review-datetime-weekdays span:nth-child(6),
+.review-datetime-weekdays span:nth-child(7) { color: #7f91ad; }
 .review-datetime-day {
   position: relative;
-  height: 36px;
+  height: 34px;
+  padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   background: transparent;
   color: #334155;
   font: inherit;
+  font-size: 14px;
   cursor: pointer;
-  transition: background .13s ease, color .13s ease, transform .13s ease;
+  transition: background .12s ease, color .12s ease, transform .12s ease, box-shadow .12s ease;
 }
 .review-datetime-day:hover {
-  background: #eef5ff;
+  background: #edf4ff;
   color: #1d4ed8;
+  transform: translateY(-1px);
 }
-.review-datetime-day.outside {
-  color: #c1cbd8;
-}
+.review-datetime-day.outside { color: #c4cedc; }
 .review-datetime-day.today::after {
   content: '';
   position: absolute;
   left: 50%;
-  bottom: 4px;
+  bottom: 3px;
   width: 4px;
   height: 4px;
   margin-left: -2px;
@@ -2133,32 +2167,74 @@ button.is-busy::before {
 .review-datetime-day.selected {
   background: #2563eb;
   color: #fff;
-  font-weight: 700;
-  box-shadow: 0 5px 14px rgba(37, 99, 235, .28);
+  font-weight: 750;
+  box-shadow: 0 5px 12px rgba(37, 99, 235, .26);
 }
-.review-datetime-day.selected.today::after {
-  background: #fff;
+.review-datetime-day.selected.today::after { background: #fff; }
+.review-datetime-month-grid,
+.review-datetime-year-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  padding: 10px 2px 2px;
 }
+.review-datetime-choice {
+  position: relative;
+  height: 50px;
+  border: 1px solid #e6edf6;
+  border-radius: 12px;
+  background: #fbfdff;
+  color: #334155;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color .14s ease, background .14s ease, color .14s ease, transform .14s ease, box-shadow .14s ease;
+}
+.review-datetime-choice:hover {
+  border-color: #b8cdf6;
+  background: #eef5ff;
+  color: #1d4ed8;
+  transform: translateY(-1px);
+}
+.review-datetime-choice.current::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+.review-datetime-choice.selected {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(37, 99, 235, .22);
+}
+.review-datetime-choice.selected.current::after { background: #fff; }
+.review-datetime-year-choice { font-variant-numeric: tabular-nums; }
 .review-datetime-time-row {
   display: grid;
-  grid-template-columns: 1fr 72px 12px 72px;
+  grid-template-columns: minmax(54px, 1fr) 74px 10px 74px;
   align-items: center;
   gap: 7px;
-  margin-top: 12px;
-  padding: 11px 12px;
-  border-radius: 13px;
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid #e8eef6;
+  border-radius: 12px;
   background: #f8fafc;
-  border: 1px solid #edf2f7;
 }
 .review-datetime-time-label {
   color: #475569;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
 }
 .review-datetime-time-row select {
   width: 100%;
-  height: 36px;
-  border: 1px solid #d8e1ee;
+  height: 34px;
+  border: 1px solid #d6e0ee;
   border-radius: 9px;
   background: #fff;
   padding: 0 8px;
@@ -2168,33 +2244,34 @@ button.is-busy::before {
 }
 .review-datetime-time-row select:focus {
   border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, .10);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, .09);
 }
 .review-datetime-time-separator {
   text-align: center;
   color: #64748b;
-  font-weight: 700;
+  font-weight: 750;
 }
 .review-datetime-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid #edf2f7;
 }
-.review-datetime-action-right {
-  display: flex;
-  gap: 8px;
-}
+.review-datetime-action-right { display: flex; gap: 7px; }
 .review-datetime-actions button {
-  min-height: 36px;
+  min-height: 35px;
   padding: 7px 13px;
   border-radius: 10px;
 }
 @media (max-width: 520px) {
   .review-datetime-popover { padding: 11px; border-radius: 15px; }
-  .review-datetime-day { height: 34px; }
-  .review-datetime-time-row { grid-template-columns: 1fr 66px 10px 66px; padding: 9px; }
+  .review-datetime-calendar-body { min-height: 232px; }
+  .review-datetime-day { height: 32px; }
+  .review-datetime-month-grid,
+  .review-datetime-year-grid { gap: 7px; }
+  .review-datetime-choice { height: 46px; }
+  .review-datetime-time-row { grid-template-columns: minmax(48px, 1fr) 68px 8px 68px; padding: 9px; }
 }
