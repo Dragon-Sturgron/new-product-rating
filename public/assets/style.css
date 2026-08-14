@@ -2275,3 +2275,113 @@ button.is-busy::before {
   .review-datetime-choice { height: 46px; }
   .review-datetime-time-row { grid-template-columns: minmax(48px, 1fr) 68px 8px 68px; padding: 9px; }
 }
+
+/* V22 日期时间选择器：自定义小时 / 分钟下拉 */
+.review-datetime-time-select {
+  position: relative;
+  min-width: 0;
+}
+.review-datetime-time-trigger {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 9px 0 11px;
+  border: 1px solid #d6e0ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  outline: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .025);
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease, color .15s ease;
+}
+.review-datetime-time-trigger svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: #64748b;
+  transition: transform .16s ease, color .16s ease;
+}
+.review-datetime-time-trigger:hover {
+  border-color: #9dbbf5;
+  background: #f8fbff;
+}
+.review-datetime-time-trigger:focus-visible,
+.review-datetime-time-select.open .review-datetime-time-trigger {
+  border-color: #2563eb;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .10);
+}
+.review-datetime-time-select.open .review-datetime-time-trigger svg {
+  color: #2563eb;
+  transform: rotate(180deg);
+}
+.review-datetime-time-menu {
+  position: absolute;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 7px);
+  display: none;
+  max-height: 210px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+  background: rgba(255,255,255,.995);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, .16), 0 3px 9px rgba(37, 99, 235, .08);
+}
+.review-datetime-time-select.open .review-datetime-time-menu {
+  display: grid;
+  gap: 2px;
+  animation: reviewTimeMenuIn .12s ease-out;
+}
+@keyframes reviewTimeMenuIn {
+  from { opacity: 0; transform: translateY(4px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.review-datetime-time-option {
+  width: 100%;
+  min-height: 31px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-align: center;
+  transition: background .12s ease, color .12s ease, box-shadow .12s ease;
+}
+.review-datetime-time-option:hover {
+  background: #eef5ff;
+  color: #1d4ed8;
+}
+.review-datetime-time-option.selected {
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, .20);
+}
+.review-datetime-time-menu::-webkit-scrollbar { width: 6px; }
+.review-datetime-time-menu::-webkit-scrollbar-track { background: transparent; }
+.review-datetime-time-menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+.review-datetime-time-menu::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* 旧原生 select 规则保留兼容，但 V22 主界面不再使用 */
+@media (max-width: 520px) {
+  .review-datetime-time-trigger { height: 34px; padding-inline: 9px 7px; }
+  .review-datetime-time-menu { max-height: 190px; }
+}

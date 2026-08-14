@@ -332,12 +332,33 @@ function setupReviewDateTimePicker(host, input) {
     popover.dataset.viewMode = viewMode;
   };
 
+  const closeTimeMenus = (except = null) => {
+    if (!popover) return;
+    popover.querySelectorAll('[data-time-select].open').forEach((wrapper) => {
+      if (wrapper === except) return;
+      wrapper.classList.remove('open');
+      wrapper.querySelector('[data-time-trigger]')?.setAttribute('aria-expanded', 'false');
+    });
+  };
+
   const syncTimeControls = () => {
     if (!popover) return;
-    const hour = popover.querySelector('[data-datetime-hour]');
-    const minute = popover.querySelector('[data-datetime-minute]');
-    if (hour) hour.value = pad(selectedDate.getHours());
-    if (minute) minute.value = pad(selectedDate.getMinutes());
+    const hourValue = pad(selectedDate.getHours());
+    const minuteValue = pad(selectedDate.getMinutes());
+    const hourText = popover.querySelector('[data-datetime-hour-value]');
+    const minuteText = popover.querySelector('[data-datetime-minute-value]');
+    if (hourText) hourText.textContent = hourValue;
+    if (minuteText) minuteText.textContent = minuteValue;
+    popover.querySelectorAll('[data-time-option="hour"]').forEach((item) => {
+      const selected = item.dataset.value === hourValue;
+      item.classList.toggle('selected', selected);
+      item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+    popover.querySelectorAll('[data-time-option="minute"]').forEach((item) => {
+      const selected = item.dataset.value === minuteValue;
+      item.classList.toggle('selected', selected);
+      item.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
   };
 
   const positionPopover = () => {
@@ -434,9 +455,25 @@ function setupReviewDateTimePicker(host, input) {
       <div class="review-datetime-calendar-body" data-datetime-calendar-body></div>
       <div class="review-datetime-time-row">
         <span class="review-datetime-time-label">时间</span>
-        <select data-datetime-hour aria-label="小时">${Array.from({ length: 24 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('')}</select>
+        <div class="review-datetime-time-select" data-time-select="hour">
+          <button type="button" class="review-datetime-time-trigger" data-time-trigger="hour" aria-haspopup="listbox" aria-expanded="false" aria-label="选择小时">
+            <span data-datetime-hour-value>${pad(selectedDate.getHours())}</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="review-datetime-time-menu" data-time-menu="hour" role="listbox" aria-label="小时">
+            ${Array.from({ length: 24 }, (_, i) => `<button type="button" class="review-datetime-time-option" data-time-option="hour" data-value="${pad(i)}" role="option">${pad(i)}</button>`).join('')}
+          </div>
+        </div>
         <span class="review-datetime-time-separator">:</span>
-        <select data-datetime-minute aria-label="分钟">${Array.from({ length: 60 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('')}</select>
+        <div class="review-datetime-time-select" data-time-select="minute">
+          <button type="button" class="review-datetime-time-trigger" data-time-trigger="minute" aria-haspopup="listbox" aria-expanded="false" aria-label="选择分钟">
+            <span data-datetime-minute-value>${pad(selectedDate.getMinutes())}</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="review-datetime-time-menu" data-time-menu="minute" role="listbox" aria-label="分钟">
+            ${Array.from({ length: 60 }, (_, i) => `<button type="button" class="review-datetime-time-option" data-time-option="minute" data-value="${pad(i)}" role="option">${pad(i)}</button>`).join('')}
+          </div>
+        </div>
       </div>
       <div class="review-datetime-actions">
         <button type="button" class="ghost review-datetime-now" data-datetime-now>现在</button>
@@ -454,6 +491,31 @@ function setupReviewDateTimePicker(host, input) {
     window.requestAnimationFrame(() => popover?.classList.add('visible'));
 
     popover.addEventListener('click', (event) => {
+      const timeOption = event.target.closest('[data-time-option]');
+      if (timeOption) {
+        const type = timeOption.dataset.timeOption;
+        const value = Number(timeOption.dataset.value || 0);
+        if (type === 'hour') selectedDate.setHours(value);
+        if (type === 'minute') selectedDate.setMinutes(value);
+        syncTimeControls();
+        closeTimeMenus();
+        return;
+      }
+
+      const timeTrigger = event.target.closest('[data-time-trigger]');
+      if (timeTrigger) {
+        const wrapper = timeTrigger.closest('[data-time-select]');
+        const willOpen = !wrapper?.classList.contains('open');
+        closeTimeMenus(wrapper);
+        if (wrapper) wrapper.classList.toggle('open', willOpen);
+        timeTrigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) {
+          window.requestAnimationFrame(() => wrapper?.querySelector('.review-datetime-time-option.selected')?.scrollIntoView({ block: 'nearest' }));
+        }
+        return;
+      }
+
+      closeTimeMenus();
       const dayBtn = event.target.closest('[data-datetime-day]');
       if (dayBtn) {
         const [y, m, d] = dayBtn.dataset.datetimeDay.split('-').map(Number);
@@ -510,10 +572,6 @@ function setupReviewDateTimePicker(host, input) {
       if (event.target.closest('[data-datetime-confirm]')) confirmPicker();
     });
 
-    popover.addEventListener('change', (event) => {
-      if (event.target.matches('[data-datetime-hour]')) selectedDate.setHours(Number(event.target.value || 0));
-      if (event.target.matches('[data-datetime-minute]')) selectedDate.setMinutes(Number(event.target.value || 0));
-    });
 
     window.setTimeout(() => {
       document.addEventListener('pointerdown', onDocumentPointerDown, true);
