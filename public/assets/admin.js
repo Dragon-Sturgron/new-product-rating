@@ -205,7 +205,8 @@ function showConfirmDialog(options = {}) {
 
 
 function formatLocalDateTimeInput(value) {
-  const d = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const d = value ? new Date(value) : new Date();
+  if (!value) d.setDate(d.getDate() + 2);
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
