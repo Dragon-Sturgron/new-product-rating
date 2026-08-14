@@ -214,6 +214,207 @@ function normalizeDateTimeForApi(value) {
   if (!raw) return '';
   return raw.replace('T', ' ').slice(0, 16) + ':00';
 }
+
+
+function parseLocalDateTimeValue(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return new Date();
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), 0, 0);
+}
+function localDateTimeValue(date) {
+  const d = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function setupReviewDateTimePicker(host, input) {
+  if (!host || !input) return () => {};
+  const control = input.closest('[data-review-datetime-control]');
+  if (!control) return () => {};
+  let popover = null;
+  let selectedDate = parseLocalDateTimeValue(input.value);
+  let viewYear = selectedDate.getFullYear();
+  let viewMonth = selectedDate.getMonth();
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+  const renderCalendar = () => {
+    if (!popover) return;
+    const title = popover.querySelector('[data-datetime-month-title]');
+    if (title) title.textContent = `${viewYear}年 ${viewMonth + 1}月`;
+    const grid = popover.querySelector('[data-datetime-days]');
+    if (!grid) return;
+    const firstWeekday = new Date(viewYear, viewMonth, 1).getDay();
+    const currentDays = daysInMonth(viewYear, viewMonth);
+    const prevMonthDays = daysInMonth(viewYear, viewMonth - 1);
+    const today = new Date();
+    const cells = [];
+    for (let i = 0; i < 42; i += 1) {
+      let year = viewYear;
+      let month = viewMonth;
+      let day = i - firstWeekday + 1;
+      let outside = false;
+      if (day <= 0) {
+        month -= 1;
+        if (month < 0) { month = 11; year -= 1; }
+        day = prevMonthDays + day;
+        outside = true;
+      } else if (day > currentDays) {
+        day -= currentDays;
+        month += 1;
+        if (month > 11) { month = 0; year += 1; }
+        outside = true;
+      }
+      const date = new Date(year, month, day, selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+      const classes = ['review-datetime-day'];
+      if (outside) classes.push('outside');
+      if (sameDay(date, today)) classes.push('today');
+      if (sameDay(date, selectedDate)) classes.push('selected');
+      cells.push(`<button type="button" class="${classes.join(' ')}" data-datetime-day="${year}-${pad(month + 1)}-${pad(day)}" aria-label="${year}年${month + 1}月${day}日">${day}</button>`);
+    }
+    grid.innerHTML = cells.join('');
+  };
+  const syncTimeControls = () => {
+    if (!popover) return;
+    const hour = popover.querySelector('[data-datetime-hour]');
+    const minute = popover.querySelector('[data-datetime-minute]');
+    if (hour) hour.value = pad(selectedDate.getHours());
+    if (minute) minute.value = pad(selectedDate.getMinutes());
+  };
+  const positionPopover = () => {
+    if (!popover) return;
+    const rect = control.getBoundingClientRect();
+    const width = Math.min(356, window.innerWidth - 24);
+    popover.style.width = `${width}px`;
+    popover.style.visibility = 'hidden';
+    popover.style.display = 'block';
+    const height = popover.offsetHeight || 420;
+    const belowSpace = window.innerHeight - rect.bottom - 12;
+    const top = belowSpace >= Math.min(height, 420)
+      ? rect.bottom + 8
+      : Math.max(12, rect.top - height - 8);
+    const left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
+    popover.style.left = `${left}px`;
+    popover.style.top = `${top}px`;
+    popover.style.visibility = 'visible';
+  };
+  const closePicker = () => {
+    if (!popover) return;
+    popover.remove();
+    popover = null;
+    control.classList.remove('picker-open');
+    document.removeEventListener('pointerdown', onDocumentPointerDown, true);
+    window.removeEventListener('resize', positionPopover);
+    window.removeEventListener('scroll', positionPopover, true);
+  };
+  const confirmPicker = () => {
+    input.value = localDateTimeValue(selectedDate);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    closePicker();
+    input.focus({ preventScroll: true });
+  };
+  const onDocumentPointerDown = (event) => {
+    if (!popover) return;
+    if (popover.contains(event.target) || control.contains(event.target)) return;
+    closePicker();
+  };
+  const openPicker = () => {
+    if (popover) return;
+    selectedDate = parseLocalDateTimeValue(input.value || formatLocalDateTimeInput());
+    viewYear = selectedDate.getFullYear();
+    viewMonth = selectedDate.getMonth();
+    popover = document.createElement('div');
+    popover.className = 'review-datetime-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', '选择有效期日期和时间');
+    popover.innerHTML = `
+      <div class="review-datetime-popover-head">
+        <button type="button" class="review-datetime-nav" data-datetime-prev aria-label="上个月">‹</button>
+        <strong data-datetime-month-title></strong>
+        <button type="button" class="review-datetime-nav" data-datetime-next aria-label="下个月">›</button>
+      </div>
+      <div class="review-datetime-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+      <div class="review-datetime-days" data-datetime-days></div>
+      <div class="review-datetime-time-row">
+        <span class="review-datetime-time-label">时间</span>
+        <select data-datetime-hour aria-label="小时">${Array.from({ length: 24 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('')}</select>
+        <span class="review-datetime-time-separator">:</span>
+        <select data-datetime-minute aria-label="分钟">${Array.from({ length: 60 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('')}</select>
+      </div>
+      <div class="review-datetime-actions">
+        <button type="button" class="ghost review-datetime-now" data-datetime-now>现在</button>
+        <div class="review-datetime-action-right">
+          <button type="button" class="ghost" data-datetime-cancel>取消</button>
+          <button type="button" class="primary" data-datetime-confirm>确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(popover);
+    control.classList.add('picker-open');
+    renderCalendar();
+    syncTimeControls();
+    positionPopover();
+    window.requestAnimationFrame(() => popover?.classList.add('visible'));
+    popover.addEventListener('click', (event) => {
+      const dayBtn = event.target.closest('[data-datetime-day]');
+      if (dayBtn) {
+        const [y, m, d] = dayBtn.dataset.datetimeDay.split('-').map(Number);
+        selectedDate = new Date(y, m - 1, d, selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+        viewYear = y;
+        viewMonth = m - 1;
+        renderCalendar();
+        return;
+      }
+      if (event.target.closest('[data-datetime-prev]')) {
+        viewMonth -= 1;
+        if (viewMonth < 0) { viewMonth = 11; viewYear -= 1; }
+        renderCalendar();
+        return;
+      }
+      if (event.target.closest('[data-datetime-next]')) {
+        viewMonth += 1;
+        if (viewMonth > 11) { viewMonth = 0; viewYear += 1; }
+        renderCalendar();
+        return;
+      }
+      if (event.target.closest('[data-datetime-now]')) {
+        selectedDate = new Date();
+        viewYear = selectedDate.getFullYear();
+        viewMonth = selectedDate.getMonth();
+        renderCalendar();
+        syncTimeControls();
+        return;
+      }
+      if (event.target.closest('[data-datetime-cancel]')) { closePicker(); return; }
+      if (event.target.closest('[data-datetime-confirm]')) confirmPicker();
+    });
+    popover.addEventListener('change', (event) => {
+      if (event.target.matches('[data-datetime-hour]')) selectedDate.setHours(Number(event.target.value || 0));
+      if (event.target.matches('[data-datetime-minute]')) selectedDate.setMinutes(Number(event.target.value || 0));
+    });
+    window.setTimeout(() => document.addEventListener('pointerdown', onDocumentPointerDown, true), 0);
+    window.addEventListener('resize', positionPopover);
+    window.addEventListener('scroll', positionPopover, true);
+  };
+  const onControlClick = (event) => {
+    event.preventDefault();
+    openPicker();
+  };
+  const onControlKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openPicker();
+    }
+  };
+  control.addEventListener('click', onControlClick);
+  control.addEventListener('keydown', onControlKeyDown);
+  return () => {
+    closePicker();
+    control.removeEventListener('click', onControlClick);
+    control.removeEventListener('keydown', onControlKeyDown);
+  };
+}
 function isReviewLinkExpired(link) {
   if (!link || !link.expires_at) return false;
   return String(link.expires_at).replace('T', ' ').slice(0, 19) <= new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
@@ -1738,7 +1939,12 @@ async function showEditReviewLinkDialog(link) {
           <p>可以修改该评分链接包含的款式和有效期。修改后，评分人访问该链接时会按最新设置显示。</p>
           <div class="review-link-form-grid">
             <label>链接名称<input id="reviewLinkEditNameInput" value="${escapeHtml(link.name || '')}" placeholder="例如 张三评分 / 第一批评分" /></label>
-            <label>有效期至<input id="reviewLinkEditExpiresInput" type="datetime-local" value="${escapeHtml(formatLocalDateTimeInput(link.expires_at))}" /></label>
+            <label class="review-datetime-label">有效期至
+              <div class="review-datetime-control" data-review-datetime-control tabindex="0" role="button" aria-label="选择有效期至">
+                <input id="reviewLinkEditExpiresInput" class="review-datetime-input" type="datetime-local" readonly value="${escapeHtml(formatLocalDateTimeInput(link.expires_at))}" tabindex="-1" />
+                <span class="review-datetime-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 2v3M17 2v3M3.5 9h17M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              </div>
+            </label>
             <label class="wide">备注<textarea id="reviewLinkEditRemarkInput" rows="2" placeholder="可选，例如发给谁、用途说明">${escapeHtml(link.remark || '')}</textarea></label>
           </div>
           <div class="review-link-style-selector-wrap">
@@ -1758,6 +1964,7 @@ async function showEditReviewLinkDialog(link) {
   const backdrop = host.querySelector('[data-link-backdrop]');
   const cancelBtn = host.querySelector('[data-link-cancel]');
   const confirmBtn = host.querySelector('[data-link-confirm]');
+  const cleanupDateTimePicker = setupReviewDateTimePicker(host, host.querySelector('#reviewLinkEditExpiresInput'));
   const updateSelectedCount = () => {
     const count = host.querySelectorAll('[data-review-link-style-id]:checked').length;
     const countNode = host.querySelector('#reviewLinkStyleSelectedCount');
@@ -1767,7 +1974,7 @@ async function showEditReviewLinkDialog(link) {
   host.addEventListener('change', (event) => {
     if (host.innerHTML && event.target.closest('[data-review-link-style-id]')) updateSelectedCount();
   });
-  const close = () => { document.removeEventListener('keydown', onKeyDown); host.innerHTML = ''; };
+  const close = () => { cleanupDateTimePicker(); document.removeEventListener('keydown', onKeyDown); host.innerHTML = ''; };
   const onKeyDown = (event) => { if (event.key === 'Escape') close(); };
   document.addEventListener('keydown', onKeyDown);
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
@@ -1819,7 +2026,12 @@ function showGenerateReviewLinkDialog() {
           <p>已选择 ${selected.length} 个款式。生成后评分人只能看到这些款式。</p>
           <div class="review-link-form-grid">
             <label>链接名称<input id="reviewLinkNameInput" value="${escapeHtml(defaultName)}" placeholder="例如 张三评分 / 第一批评分" /></label>
-            <label>有效期至<input id="reviewLinkExpiresInput" type="datetime-local" value="${escapeHtml(formatLocalDateTimeInput())}" /></label>
+            <label class="review-datetime-label">有效期至
+              <div class="review-datetime-control" data-review-datetime-control tabindex="0" role="button" aria-label="选择有效期至">
+                <input id="reviewLinkExpiresInput" class="review-datetime-input" type="datetime-local" readonly value="${escapeHtml(formatLocalDateTimeInput())}" tabindex="-1" />
+                <span class="review-datetime-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 2v3M17 2v3M3.5 9h17M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              </div>
+            </label>
             <label class="wide">备注<textarea id="reviewLinkRemarkInput" rows="2" placeholder="可选，例如发给谁、用途说明"></textarea></label>
           </div>
           <div class="selected-style-preview">
@@ -1837,7 +2049,8 @@ function showGenerateReviewLinkDialog() {
   const backdrop = host.querySelector('[data-link-backdrop]');
   const cancelBtn = host.querySelector('[data-link-cancel]');
   const confirmBtn = host.querySelector('[data-link-confirm]');
-  const close = () => { document.removeEventListener('keydown', onKeyDown); host.innerHTML = ''; };
+  const cleanupDateTimePicker = setupReviewDateTimePicker(host, host.querySelector('#reviewLinkExpiresInput'));
+  const close = () => { cleanupDateTimePicker(); document.removeEventListener('keydown', onKeyDown); host.innerHTML = ''; };
   const onKeyDown = (event) => { if (event.key === 'Escape') close(); };
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
   cancelBtn.addEventListener('click', close);
