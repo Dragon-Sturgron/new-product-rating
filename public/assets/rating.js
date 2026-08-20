@@ -318,6 +318,8 @@ function decodePath(value) {
 function looksLikeManagedKey(path, settings = {}) {
   const clean = cleanPathPrefix(path);
   if (!clean || clean.includes('..')) return false;
+  const fileName = clean.split('/').pop() || '';
+  if (/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|bin)$/i.test(fileName)) return true;
   const prefix = cleanPathPrefix(settings.image_key_prefix || 'review-images');
   return !prefix || clean === prefix || clean.startsWith(`${prefix}-`) || clean.startsWith(`${prefix}/`);
 }

@@ -37,6 +37,15 @@ function safeExt(filename = '', contentType = '') {
   return allow.has(ext) ? ext : 'bin';
 }
 
+function safeStyleCode(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
 function safeBaseName(filename = 'image') {
   const name = String(filename || 'image')
     .replace(/\.[^.]+$/, '')
@@ -52,12 +61,18 @@ function isUploadFileLike(value) {
     && typeof value.size === 'number';
 }
 
-function buildObjectKey(file, config) {
+function buildObjectKey(file, config, styleCode = '') {
+  const ext = safeExt(file.name, file.type);
+  const cleanCode = safeStyleCode(styleCode);
+
+  if (cleanCode) {
+    return `${cleanCode}.${ext}`;
+  }
+
   const prefix = String(config.image_key_prefix || 'review-images')
     .trim()
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'review-images';
-  const ext = safeExt(file.name, file.type);
   const base = safeBaseName(file.name);
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const random = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
@@ -182,6 +197,8 @@ function objectKeyFromPublicUrl(imageUrl, config = {}) {
 function looksManagedImageKey(key, config = {}) {
   const value = String(key || '').trim();
   if (!value || value.includes('..')) return false;
+  const fileName = value.split('/').pop() || '';
+  if (/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|bin)$/i.test(fileName)) return true;
   const prefix = String(config.image_key_prefix || '').trim();
   if (!prefix) return true;
   return value === prefix || value.startsWith(`${prefix}-`) || value.startsWith(`${prefix}/`);
@@ -225,7 +242,8 @@ export async function uploadImageFromRequest(request, env) {
   const maxBytes = getMaxBytes(config);
   if (file.size > maxBytes) throw jsonError(`图片不能超过 ${Math.round(maxBytes / 1024 / 1024)}MB`, 400);
 
-  const key = buildObjectKey(file, config);
+  const styleCode = String(form.get('style_code') || form.get('styleCode') || form.get('code') || '').trim();
+  const key = buildObjectKey(file, config, styleCode);
   const bytes = await file.arrayBuffer();
   const contentType = file.type || 'application/octet-stream';
 
