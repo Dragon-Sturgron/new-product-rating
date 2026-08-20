@@ -37,15 +37,6 @@ function safeExt(filename = '', contentType = '') {
   return allow.has(ext) ? ext : 'bin';
 }
 
-function safeStyleCode(value = '') {
-  return String(value || '')
-    .trim()
-    .replace(/\.[^.]+$/, '')
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100);
-}
-
 function safeBaseName(filename = 'image') {
   const name = String(filename || 'image')
     .replace(/\.[^.]+$/, '')
@@ -53,6 +44,15 @@ function safeBaseName(filename = 'image') {
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
   return name || 'image';
+}
+
+function safeStyleCode(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
 }
 
 function isUploadFileLike(value) {
@@ -65,18 +65,13 @@ function buildObjectKey(file, config, styleCode = '') {
   const ext = safeExt(file.name, file.type);
   const cleanCode = safeStyleCode(styleCode);
 
+  // 对象 Key 只保存文件名，不自动增加目录。
+  // 目录由后台「公开访问路径前缀」统一控制。
   if (cleanCode) {
     return `${cleanCode}.${ext}`;
   }
 
-  const prefix = String(config.image_key_prefix || 'review-images')
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'review-images';
-  const base = safeBaseName(file.name);
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const random = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-  return `${prefix}-${date}-${Date.now()}-${random}-${base}.${ext}`;
+  return `image-${Date.now()}.${ext}`;
 }
 
 function withTrailingSlash(value) {
@@ -197,8 +192,6 @@ function objectKeyFromPublicUrl(imageUrl, config = {}) {
 function looksManagedImageKey(key, config = {}) {
   const value = String(key || '').trim();
   if (!value || value.includes('..')) return false;
-  const fileName = value.split('/').pop() || '';
-  if (/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|bin)$/i.test(fileName)) return true;
   const prefix = String(config.image_key_prefix || '').trim();
   if (!prefix) return true;
   return value === prefix || value.startsWith(`${prefix}-`) || value.startsWith(`${prefix}/`);
