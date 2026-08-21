@@ -383,9 +383,10 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
   return key ? buildPublicImageUrlFromKey(key, settings) : raw;
 }
 function displayImageUrl(value) {
-  // 图片已经通过 EdgeOne HTTPS 加速，直接访问公开地址。
-  // 不再经过 /api/public/image-proxy，避免接口不存在导致 404。
-  return normalizeImageUrlToCurrentPublicDomain(value);
+  // HTTPS 页面不能加载 HTTP 图片，统一切换到 EdgeOne HTTPS 地址。
+  // 不再依赖 /api/public/image-proxy。
+  const url = normalizeImageUrlToCurrentPublicDomain(value);
+  return String(url || '').replace(/^http:\/\//i, 'https://');
 }
 
 function escapeHtml(text) {
