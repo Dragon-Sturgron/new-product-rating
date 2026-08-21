@@ -91,7 +91,7 @@ function publicDisplayUrl(rawUrl) {
   // HTTPS 页面无法稳定直接显示 http 图片；当用户填写 http:// 七牛测试域名时，
   // 通过本站同源 HTTPS 代理展示，仍然按照用户填写的域名拼接真实图片地址。
   if (/^http:\/\//i.test(value)) {
-    return `/api/public/image-proxy?url=${encodeURIComponent(value)}`;
+    return value.replace(/^http:\/\//i, 'https://');
   }
   return value;
 }
