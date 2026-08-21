@@ -751,9 +751,11 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
   return key ? buildPublicImageUrlFromKey(key, settings) : raw;
 }
 function displayImageUrl(value) {
-  // EdgeOne + 七牛公开域名已经支持 HTTPS，直接返回图片地址。
-  // 禁止再次调用 image-proxy，避免 /api/public/image-proxy 404。
-  return normalizeImageUrlToCurrentPublicDomain(value);
+  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
+  if (/^http:\/\//i.test(normalized)) {
+    return normalized.replace(/^http:\/\/i, 'https://');
+  }
+  return normalized;
 }
 
 function escapeHtml(text) {
@@ -1081,11 +1083,12 @@ async function requestJson(path, options = {}) {
     endNetworkActivity();
   }
 }
-async function uploadImageFile(file, styleCode = '') {
+async function uploadImageFile(file) {
   if (!file) return '';
   if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
   const form = new FormData();
   form.append('file', file);
+  const styleCode = styleForm?.elements?.style_code?.value || '';
   if (styleCode) form.append('style_code', styleCode);
   await waitForNextPaint();
   beginNetworkActivity();
@@ -1442,7 +1445,7 @@ async function commitPendingInlineImageIfNeeded(row) {
   const id = row?.dataset?.styleEditId;
   const file = id ? pendingInlineImageFiles.get(id) : null;
   if (!file) return '';
-  const url = await uploadImageFile(file, styleForm?.elements?.style_code?.value || '');
+  const url = await uploadImageFile(file);
   pendingInlineImageFiles.delete(id);
   clearInlineLocalImagePreview(row, { clearPending: false });
   updateInlineImagePreview(row, url);
@@ -2543,7 +2546,7 @@ async function uploadAndSetPreview(file) {
 }
 async function commitPendingStyleImageIfNeeded() {
   if (!pendingStyleImageFile) return styleForm.elements.product_image.value.trim() || styleForm.elements.product_image_url.value.trim();
-  const url = await uploadImageFile(pendingStyleImageFile, styleForm?.elements?.style_code?.value || '');
+  const url = await uploadImageFile(pendingStyleImageFile);
   pendingStyleImageFile = null;
   if (url) setImagePreview(url);
   return url;
