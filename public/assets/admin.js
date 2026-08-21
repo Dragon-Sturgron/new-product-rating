@@ -755,7 +755,7 @@ function displayImageUrl(value) {
   if (/^http:\/\//i.test(normalized)) {
     return normalized.replace(/^http:\/\//i, 'https://');
   }
-  return /^http:\/\//i.test(normalized) ? normalized.replace(/^http:\/\//i, 'https://') : normalized;
+  return normalized;
 }
 
 function escapeHtml(text) {
@@ -3119,3 +3119,13 @@ async function checkLogin() {
   } catch { showLogin(); }
 }
 checkLogin();
+
+
+// 图片详情预览组件自动挂载
+(function(){
+  if(!window.openImagePreview){
+    const s=document.createElement('script');
+    s.src='/assets/image-preview.js';
+    document.head.appendChild(s);
+  }
+})();

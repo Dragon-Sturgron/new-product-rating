@@ -385,8 +385,7 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
 function displayImageUrl(value) {
   // 图片已经通过 EdgeOne HTTPS 加速，直接访问公开地址。
   // 不再经过 /api/public/image-proxy，避免接口不存在导致 404。
-  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
-  return /^http:\/\//i.test(normalized) ? normalized.replace(/^http:\/\//i, 'https://') : normalized;
+  return normalizeImageUrlToCurrentPublicDomain(value);
 }
 
 function escapeHtml(text) {
@@ -1018,3 +1017,13 @@ purgeExpiredDrafts();
 applyGradeRuleIntro();
 if (reviewLinkCode) loadPublicIntro();
 else showAccessError();
+
+
+// 图片详情预览组件自动挂载
+(function(){
+  if(!window.openImagePreview){
+    const s=document.createElement('script');
+    s.src='/assets/image-preview.js';
+    document.head.appendChild(s);
+  }
+})();
