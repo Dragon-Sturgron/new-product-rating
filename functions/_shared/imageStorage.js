@@ -60,9 +60,8 @@ function buildObjectKey(file, config, styleCode = '') {
   const ext = safeExt(file.name, file.type);
   const base = safeBaseName(file.name);
   const style = safeBaseName(styleCode);
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const random = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-  return `${prefix}-${date}-${Date.now()}-${random}-${base}.${ext}`;
+  const normalizedStyle = style || base || 'image';
+  return `${prefix}-${normalizedStyle}.${ext}`;
 }
 
 function withTrailingSlash(value) {
@@ -91,7 +90,6 @@ function publicDisplayUrl(rawUrl) {
   // HTTPS 页面无法稳定直接显示 http 图片；当用户填写 http:// 七牛测试域名时，
   // 通过本站同源 HTTPS 代理展示，仍然按照用户填写的域名拼接真实图片地址。
   if (/^http:\/\//i.test(value)) {
-    // 图片预览统一转换为 HTTPS，避免 HTTPS 页面阻止 HTTP 七牛图片
     return value.replace(/^http:\/\//i, 'https://');
   }
   return value;

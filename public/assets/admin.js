@@ -752,10 +752,7 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
 }
 function displayImageUrl(value) {
   const normalized = normalizeImageUrlToCurrentPublicDomain(value);
-  if (/^http:\/\//i.test(normalized)) {
-    return `/api/public/image-proxy?url=${encodeURIComponent(normalized)}`;
-  }
-  return normalized;
+  return String(normalized || '').replace(/^http:\/\//i, 'https://');
 }
 
 function escapeHtml(text) {
