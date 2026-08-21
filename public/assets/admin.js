@@ -1347,7 +1347,7 @@ function renderScoreGroupDetail(group) {
               <tbody>
                 ${group.scores.map(score => {
                   const image = score.product_image
-                    ? `<img class="photo" src="${escapeHtml(displayImageUrl(score.product_image))}" alt="产品图" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'photo-placeholder',textContent:'无图'}))">`
+                    ? `<img class="photo" src="${escapeHtml(displayImageUrl(score.product_image))}" data-preview-image=${escapeHtml(displayImageUrl(score.product_image))} alt="产品图" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'photo-placeholder',textContent:'无图'}))">`
                     : '<span class="photo-placeholder">无图</span>';
                   const values = Object.fromEntries(getScoreItems(score).map(item => [`${normalizeScoreType(item.score_type)}::${item.label}`, `${item.score} / ${normalizeMaxScore(item.max_score)}`]));
                   return `
