@@ -2,5 +2,6 @@
   "name": "new-product-rating",
   "framework": "none",
   "buildCommand": "",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+    "functionsDirectory": "functions"
 }
