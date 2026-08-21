@@ -60,8 +60,11 @@ function buildObjectKey(file, config, styleCode = '') {
   const ext = safeExt(file.name, file.type);
   const base = safeBaseName(file.name);
   const style = safeBaseName(styleCode);
-  const normalizedStyle = style || base || 'image';
-  return `${prefix}-${normalizedStyle}.${ext}`;
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  // 文件名规则：文件名前缀 + 款式编码 + 后缀
+  // 款式编码为空时保留安全备用名称，避免生成无意义文件名。
+  const namePart = style || base || 'image';
+  return `${prefix}-${namePart}.${ext}`;
 }
 
 function withTrailingSlash(value) {
@@ -87,8 +90,8 @@ function buildPublicUrl(publicBase, key, config = {}) {
 function publicDisplayUrl(rawUrl) {
   const value = String(rawUrl || '').trim();
   if (!value) return value;
-  // HTTPS 页面无法稳定直接显示 http 图片；当用户填写 http:// 七牛测试域名时，
-  // 通过本站同源 HTTPS 代理展示，仍然按照用户填写的域名拼接真实图片地址。
+  // HTTPS 页面不能加载 HTTP 图片，统一升级为 HTTPS。
+  // 不再依赖 /api/public/image-proxy，避免 EdgeOne 路由不存在导致 404。
   if (/^http:\/\//i.test(value)) {
     return value.replace(/^http:\/\//i, 'https://');
   }

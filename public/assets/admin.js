@@ -752,7 +752,10 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
 }
 function displayImageUrl(value) {
   const normalized = normalizeImageUrlToCurrentPublicDomain(value);
-  return String(normalized || '').replace(/^http:\/\//i, 'https://');
+  if (/^http:\/\//i.test(normalized)) {
+    return normalized.replace(/^http:\/\//i, 'https://');
+  }
+  return normalized;
 }
 
 function escapeHtml(text) {
