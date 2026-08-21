@@ -1019,11 +1019,5 @@ if (reviewLinkCode) loadPublicIntro();
 else showAccessError();
 
 
-// 图片详情预览组件自动挂载
-(function(){
-  if(!window.openImagePreview){
-    const s=document.createElement('script');
-    s.src='/assets/image-preview.js';
-    document.head.appendChild(s);
-  }
-})();
+// image preview loader
+(function(){var s=document.createElement('script');s.src='/assets/image-preview.js';document.head.appendChild(s);})();

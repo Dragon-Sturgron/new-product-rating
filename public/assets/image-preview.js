@@ -1,51 +1,52 @@
 
 (function () {
-  function normalizeImageUrl(url) {
-    if (!url) return '';
-    let value = String(url).trim();
-    if (value.startsWith('http://xianglu.dragon-sturgeon.cn')) {
-      value = value.replace(/^http:\/\//i, 'https://');
-    }
-    return value;
+  function fixUrl(url) {
+    if (!url) return "";
+    return String(url).replace(
+      /^http:\/\/xianglu\.dragon-sturgeon\.cn/i,
+      "https://xianglu.dragon-sturgeon.cn"
+    );
   }
 
-  function openPreview(src) {
-    src = normalizeImageUrl(src);
-    if (!src) return;
+  function openImagePreview(url) {
+    url = fixUrl(url);
+    if (!url) return;
 
-    let mask = document.querySelector('.image-preview-mask');
-    if (!mask) {
-      mask = document.createElement('div');
-      mask.className = 'image-preview-mask';
-      mask.innerHTML = '<img class="image-preview-content" alt="图片预览">';
-      document.body.appendChild(mask);
+    let box = document.querySelector(".image-preview-mask");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "image-preview-mask";
+      box.innerHTML = '<img class="image-preview-image">';
+      document.body.appendChild(box);
 
-      mask.addEventListener('click', function () {
-        mask.classList.remove('active');
+      box.addEventListener("click", function () {
+        box.classList.remove("show");
       });
 
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-          mask.classList.remove('active');
+      document.addEventListener("keydown", function(e){
+        if(e.key === "Escape"){
+          box.classList.remove("show");
         }
       });
     }
 
-    const img = mask.querySelector('.image-preview-content');
-    img.src = src;
-    mask.classList.add('active');
+    const img = box.querySelector(".image-preview-image");
+    img.src = url;
+    img.classList.remove("zoom");
+    box.classList.add("show");
 
-    img.onclick = function (e) {
+    img.onclick = function(e){
       e.stopPropagation();
-      img.classList.toggle('zoom');
+      img.classList.toggle("zoom");
     };
   }
 
-  window.openImagePreview = openPreview;
+  window.openImagePreview = openImagePreview;
 
-  document.addEventListener('click', function (e) {
-    const target = e.target.closest('[data-preview-image]');
-    if (!target) return;
-    openPreview(target.dataset.previewImage || target.src);
+  document.addEventListener("click", function(e){
+    const el = e.target.closest("[data-preview-image]");
+    if(el){
+      openImagePreview(el.dataset.previewImage || el.src);
+    }
   });
 })();
