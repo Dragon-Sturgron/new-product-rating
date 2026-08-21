@@ -751,11 +751,9 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
   return key ? buildPublicImageUrlFromKey(key, settings) : raw;
 }
 function displayImageUrl(value) {
-  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
-  if (/^http:\/\//i.test(normalized)) {
-    return `/api/public/image-proxy?url=${encodeURIComponent(normalized)}`;
-  }
-  return normalized;
+  // EdgeOne + 七牛公开域名已经支持 HTTPS，直接返回图片地址。
+  // 禁止再次调用 image-proxy，避免 /api/public/image-proxy 404。
+  return normalizeImageUrlToCurrentPublicDomain(value);
 }
 
 function escapeHtml(text) {
