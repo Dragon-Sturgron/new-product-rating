@@ -385,7 +385,8 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
 function displayImageUrl(value) {
   // 图片已经通过 EdgeOne HTTPS 加速，直接访问公开地址。
   // 不再经过 /api/public/image-proxy，避免接口不存在导致 404。
-  return normalizeImageUrlToCurrentPublicDomain(value);
+  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
+  return /^http:\/\//i.test(normalized) ? normalized.replace(/^http:\/\//i, 'https://') : normalized;
 }
 
 function escapeHtml(text) {

@@ -755,7 +755,7 @@ function displayImageUrl(value) {
   if (/^http:\/\//i.test(normalized)) {
     return normalized.replace(/^http:\/\//i, 'https://');
   }
-  return normalized;
+  return /^http:\/\//i.test(normalized) ? normalized.replace(/^http:\/\//i, 'https://') : normalized;
 }
 
 function escapeHtml(text) {
