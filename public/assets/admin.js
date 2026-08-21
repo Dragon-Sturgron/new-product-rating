@@ -751,10 +751,15 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
   return key ? buildPublicImageUrlFromKey(key, settings) : raw;
 }
 function displayImageUrl(value) {
-  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
+  let normalized = normalizeImageUrlToCurrentPublicDomain(value);
+
+  if (!normalized) return '';
+
+  // 七牛 HTTP 自动转 HTTPS
   if (/^http:\/\//i.test(normalized)) {
-    return normalized.replace(/^http:\/\/i, 'https://');
+    normalized = normalized.replace(/^http:\/\//i, 'https://');
   }
+
   return normalized;
 }
 
