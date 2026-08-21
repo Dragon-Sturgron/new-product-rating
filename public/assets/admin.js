@@ -1083,11 +1083,12 @@ async function requestJson(path, options = {}) {
     endNetworkActivity();
   }
 }
-async function uploadImageFile(file) {
+async function uploadImageFile(file, styleCode = '') {
   if (!file) return '';
   if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
   const form = new FormData();
   form.append('file', file);
+  if (styleCode) form.append('style_code', styleCode);
   await waitForNextPaint();
   beginNetworkActivity();
   try {
@@ -1443,7 +1444,7 @@ async function commitPendingInlineImageIfNeeded(row) {
   const id = row?.dataset?.styleEditId;
   const file = id ? pendingInlineImageFiles.get(id) : null;
   if (!file) return '';
-  const url = await uploadImageFile(file);
+  const url = await uploadImageFile(file, styleForm?.elements?.style_code?.value || '');
   pendingInlineImageFiles.delete(id);
   clearInlineLocalImagePreview(row, { clearPending: false });
   updateInlineImagePreview(row, url);
@@ -2544,7 +2545,7 @@ async function uploadAndSetPreview(file) {
 }
 async function commitPendingStyleImageIfNeeded() {
   if (!pendingStyleImageFile) return styleForm.elements.product_image.value.trim() || styleForm.elements.product_image_url.value.trim();
-  const url = await uploadImageFile(pendingStyleImageFile);
+  const url = await uploadImageFile(pendingStyleImageFile, styleForm?.elements?.style_code?.value || '');
   pendingStyleImageFile = null;
   if (url) setImagePreview(url);
   return url;

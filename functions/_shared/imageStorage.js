@@ -52,13 +52,14 @@ function isUploadFileLike(value) {
     && typeof value.size === 'number';
 }
 
-function buildObjectKey(file, config) {
+function buildObjectKey(file, config, styleCode = '') {
   const prefix = String(config.image_key_prefix || 'review-images')
     .trim()
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'review-images';
   const ext = safeExt(file.name, file.type);
   const base = safeBaseName(file.name);
+  const style = safeBaseName(styleCode);
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const random = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   return `${prefix}-${date}-${Date.now()}-${random}-${base}.${ext}`;
@@ -219,13 +220,14 @@ export async function uploadImageFromRequest(request, env) {
 
   const form = await request.formData();
   const file = form.get('file') || form.get('image');
+  const styleCode = String(form.get('style_code') || '').trim();
   if (!isUploadFileLike(file)) throw jsonError('请上传图片文件字段 file', 400);
   if (!String(file.type || '').startsWith('image/')) throw jsonError('只能上传图片文件', 400);
   if (file.size <= 0) throw jsonError('图片文件为空', 400);
   const maxBytes = getMaxBytes(config);
   if (file.size > maxBytes) throw jsonError(`图片不能超过 ${Math.round(maxBytes / 1024 / 1024)}MB`, 400);
 
-  const key = buildObjectKey(file, config);
+  const key = buildObjectKey(file, config, styleCode);
   const bytes = await file.arrayBuffer();
   const contentType = file.type || 'application/octet-stream';
 
