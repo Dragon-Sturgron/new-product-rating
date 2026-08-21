@@ -65,18 +65,26 @@ function buildObjectKey(file, config, styleCode = '') {
   const ext = safeExt(file.name, file.type);
   const cleanCode = safeStyleCode(styleCode);
 
+  const prefix = String(config.image_key_prefix || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
   if (cleanCode) {
-    return `${cleanCode}.${ext}`;
+    // 有款式编码时仍遵循后台“文件名前缀”配置。
+    // 例如：前缀=review，款式编码=MJ8740A
+    // 生成：review-MJ8740A.jpg
+    return `${prefix ? `${prefix}-` : ''}${cleanCode}.${ext}`;
   }
 
-  const prefix = String(config.image_key_prefix || 'review-images')
+  const finalPrefix = prefix || 'review-images';
     .trim()
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'review-images';
   const base = safeBaseName(file.name);
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const random = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-  return `${prefix}-${date}-${Date.now()}-${random}-${base}.${ext}`;
+  return `${finalPrefix}-${date}-${Date.now()}-${random}-${base}.${ext}`;
 }
 
 function withTrailingSlash(value) {
