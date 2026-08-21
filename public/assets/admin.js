@@ -686,8 +686,6 @@ function decodePath(value) {
 function looksLikeManagedKey(path, settings = {}) {
   const clean = cleanPathPrefix(path);
   if (!clean || clean.includes('..')) return false;
-  const fileName = clean.split('/').pop() || '';
-  if (/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|bin)$/i.test(fileName)) return true;
   const prefix = cleanPathPrefix(settings.image_key_prefix || 'review-images');
   return !prefix || clean === prefix || clean.startsWith(`${prefix}-`) || clean.startsWith(`${prefix}/`);
 }
@@ -753,7 +751,11 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
   return key ? buildPublicImageUrlFromKey(key, settings) : raw;
 }
 function displayImageUrl(value) {
-  return normalizeImageUrlToCurrentPublicDomain(value);
+  const normalized = normalizeImageUrlToCurrentPublicDomain(value);
+  if (/^http:\/\//i.test(normalized)) {
+    return `/api/public/image-proxy?url=${encodeURIComponent(normalized)}`;
+  }
+  return normalized;
 }
 
 function escapeHtml(text) {
@@ -1081,12 +1083,11 @@ async function requestJson(path, options = {}) {
     endNetworkActivity();
   }
 }
-async function uploadImageFile(file, styleCode = '') {
+async function uploadImageFile(file) {
   if (!file) return '';
   if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
   const form = new FormData();
   form.append('file', file);
-  form.append('style_code', String(styleCode || '').trim());
   await waitForNextPaint();
   beginNetworkActivity();
   try {
@@ -2543,7 +2544,7 @@ async function uploadAndSetPreview(file) {
 }
 async function commitPendingStyleImageIfNeeded() {
   if (!pendingStyleImageFile) return styleForm.elements.product_image.value.trim() || styleForm.elements.product_image_url.value.trim();
-  const url = await uploadImageFile(pendingStyleImageFile, styleForm.elements.style_code?.value?.trim() || '');
+  const url = await uploadImageFile(pendingStyleImageFile);
   pendingStyleImageFile = null;
   if (url) setImagePreview(url);
   return url;
