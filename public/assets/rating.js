@@ -385,7 +385,7 @@ function normalizeImageUrlToCurrentPublicDomain(value, settings = currentImageSe
 function displayImageUrl(value) {
   const normalized = normalizeImageUrlToCurrentPublicDomain(value);
   if (/^http:\/\//i.test(normalized)) {
-    return normalized.replace(/^http:\/\/i, 'https://');
+    return normalized.replace(/^http:\\/\\//i, 'https://');
   }
   return normalized;
 }
