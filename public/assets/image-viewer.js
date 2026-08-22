@@ -21,16 +21,12 @@
 
       img.src=fixUrl(target.dataset.previewImage || target.src);
       mask.classList.add('show');
-      document.documentElement.style.overflow='hidden';
-      document.body.style.overflow='hidden';
       img.classList.remove('zoom');
     });
 
     mask.addEventListener('click',function(e){
       if(e.target===mask){
         mask.classList.remove('show');
-        document.documentElement.style.overflow='';
-        document.body.style.overflow='';
       }
     });
 
@@ -42,8 +38,6 @@
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
         mask.classList.remove('show');
-        document.documentElement.style.overflow='';
-        document.body.style.overflow='';
       }
     });
   }
