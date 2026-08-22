@@ -326,7 +326,8 @@ function summaryDrawingRelsXml(images = []) {
 async function fetchSummaryImages(dataRows, requestUrl) {
   const images = [];
   for (let i = 0; i < dataRows.length; i += 1) {
-    const raw = String(dataRows[i].imageUrl || '').trim();
+    const rawValue = String(dataRows[i].imageUrl || '').trim();
+    const raw = rawValue.replace(/^http:\/\/xianglu\.dragon-sturgeon\.cn/i, 'https://xianglu.dragon-sturgeon.cn');
     if (!raw) continue;
     try {
       const target = new URL(raw, requestUrl).toString();
