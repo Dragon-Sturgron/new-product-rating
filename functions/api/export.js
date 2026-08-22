@@ -575,65 +575,62 @@ export async function onRequestGet({ request, env }) {
       }
       return Array.from(groups.values());
     }
+async function fillSummaryProductImages(summaryGroups) {
+      try {
+        // 直接读取已配置款式数据，不依赖评分记录中的 product_image
+        const styles = storage.listStyles ? await storage.listStyles({}) : [];
 
+        const imageMap = new Map();
 
-    async function fillSummaryProductImages(summaryGroups) {
-  try {
-    const styles = await getAllStylesForExport();
+        for (const style of styles || []) {
+          const code = String(
+            style.style_code ||
+            style.styleCode ||
+            style.code ||
+            ''
+          ).trim();
 
-    const imageMap = new Map();
+          if (!code) continue;
 
-    for (const style of styles || []) {
-      const code = String(
-        style.style_code ||
-        style.styleCode ||
-        style.code ||
-        ''
-      ).trim();
+          const image =
+            style.product_image ||
+            style.productImage ||
+            style.image ||
+            style.pic ||
+            style.photo ||
+            '';
 
-      if (!code) continue;
-
-      imageMap.set(code, 
-        style.product_image ||
-        style.productImage ||
-        style.image ||
-        style.pic ||
-        style.photo ||
-        ''
-      );
-    }
-
-    for (const group of summaryGroups) {
-      const code = String(
-        group.style_code ||
-        group.styleCode ||
-        ''
-      ).trim();
-
-      const image = imageMap.get(code);
-
-      if (image) {
-        group.product_image = image;
-      }
-
-      if (group.product_image) {
-        group.product_image = String(group.product_image).trim();
-
-        if (group.product_image.startsWith('http://xianglu.dragon-sturgeon.cn')) {
-          group.product_image = group.product_image.replace(/^http:\/\//i, 'https://');
+          imageMap.set(code, image);
         }
 
-        if (group.product_image.startsWith('/')) {
-          group.product_image = 'https://xianglu.dragon-sturgeon.cn' + group.product_image;
-        }
-      }
-    }
-  } catch (e) {
-    console.error('fillSummaryProductImages error', e);
-  }
+        for (const group of summaryGroups || []) {
+          const code = String(group.style_code || '').trim();
+          const image = imageMap.get(code);
 
-  return summaryGroups;
-}
+          if (image) {
+            group.product_image = image;
+          }
+
+          if (group.product_image) {
+            let url = String(group.product_image).trim();
+
+            if (url.startsWith('http://xianglu.dragon-sturgeon.cn')) {
+              url = url.replace(/^http:\/\//i, 'https://');
+            }
+
+            if (url.startsWith('/')) {
+              url = 'https://xianglu.dragon-sturgeon.cn' + url;
+            }
+
+            group.product_image = url;
+          }
+        }
+      } catch (e) {
+        console.error('fillSummaryProductImages error:', e);
+      }
+
+      return summaryGroups;
+    }
         for (const group of summaryGroups) {
           if (!group.product_image) {
             group.product_image = map.get(String(group.style_code || '').trim()) || '';
