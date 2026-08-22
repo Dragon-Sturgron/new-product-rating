@@ -342,7 +342,6 @@ async function fetchSummaryImages(dataRows, requestUrl) {
         const pathname = new URL(target).pathname.toLowerCase();
         if (/\.png$/.test(pathname)) { ext = 'png'; contentType = 'image/png'; }
         else if (/\.jpe?g$/.test(pathname)) { ext = 'jpg'; contentType = 'image/jpeg'; }
-        else if (/\.webp$/.test(pathname)) { ext = 'webp'; contentType = 'image/webp'; }
       }
       if (!ext) continue;
       const bytes = new Uint8Array(await response.arrayBuffer());
@@ -577,6 +576,76 @@ export async function onRequestGet({ request, env }) {
       return Array.from(groups.values());
     }
 
+
+    async function fillSummaryProductImages(summaryGroups) {
+  try {
+    const styles = await getAllStylesForExport();
+
+    const imageMap = new Map();
+
+    for (const style of styles || []) {
+      const code = String(
+        style.style_code ||
+        style.styleCode ||
+        style.code ||
+        ''
+      ).trim();
+
+      if (!code) continue;
+
+      imageMap.set(code, 
+        style.product_image ||
+        style.productImage ||
+        style.image ||
+        style.pic ||
+        style.photo ||
+        ''
+      );
+    }
+
+    for (const group of summaryGroups) {
+      const code = String(
+        group.style_code ||
+        group.styleCode ||
+        ''
+      ).trim();
+
+      const image = imageMap.get(code);
+
+      if (image) {
+        group.product_image = image;
+      }
+
+      if (group.product_image) {
+        group.product_image = String(group.product_image).trim();
+
+        if (group.product_image.startsWith('http://xianglu.dragon-sturgeon.cn')) {
+          group.product_image = group.product_image.replace(/^http:\/\//i, 'https://');
+        }
+
+        if (group.product_image.startsWith('/')) {
+          group.product_image = 'https://xianglu.dragon-sturgeon.cn' + group.product_image;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('fillSummaryProductImages error', e);
+  }
+
+  return summaryGroups;
+}
+        for (const group of summaryGroups) {
+          if (!group.product_image) {
+            group.product_image = map.get(String(group.style_code || '').trim()) || '';
+          }
+          if (group.product_image && group.product_image.startsWith('http://xianglu.dragon-sturgeon.cn')) {
+            group.product_image = group.product_image.replace(/^http:\/\//i, 'https://');
+          }
+        }
+      } catch (_) {}
+      return summaryGroups;
+    }
+
     const mode = String(url.searchParams.get('mode') || 'detail').toLowerCase();
     let headers;
     let rows;
@@ -584,7 +653,7 @@ export async function onRequestGet({ request, env }) {
     let fallbackFilename;
 
     if (mode === 'summary') {
-      const groups = buildSummaryGroups(scores);
+      const groups = await fillSummaryProductImages(buildSummaryGroups(scores));
       const summaryRows = groups.map(group => {
         const averageItemNumber = label => {
           const values = group.scores.map(score => findScoreValue(score, label)).filter(value => value !== '' && value != null).map(Number).filter(Number.isFinite);
