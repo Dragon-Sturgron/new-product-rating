@@ -325,31 +325,73 @@ function summaryDrawingRelsXml(images = []) {
 
 async function fetchSummaryImages(dataRows, requestUrl) {
   const images = [];
+
+  function normalizeImageUrl(value) {
+    let url = String(value || '').trim();
+    if (!url) return '';
+
+    url = url.replace(/^http:\/\/xianglu\.dragon-sturgeon\.cn/i, 'https://xianglu.dragon-sturgeon.cn');
+
+    // 兼容历史数据只保存文件路径
+    if (url.startsWith('/')) {
+      url = `https://xianglu.dragon-sturgeon.cn${url}`;
+    }
+
+    // 兼容只保存文件名
+    if (!/^https?:\/\//i.test(url) && !url.startsWith('data:')) {
+      url = `https://xianglu.dragon-sturgeon.cn/${url.replace(/^\/+/, '')}`;
+    }
+
+    return url;
+  }
+
   for (let i = 0; i < dataRows.length; i += 1) {
-    const rawValue = String(dataRows[i].imageUrl || '').trim();
-    const raw = rawValue.replace(/^http:\/\/xianglu\.dragon-sturgeon\.cn/i, 'https://xianglu.dragon-sturgeon.cn');
+    const raw = normalizeImageUrl(dataRows[i].imageUrl);
     if (!raw) continue;
+
     try {
       const target = new URL(raw, requestUrl).toString();
-      const response = await fetch(target, { headers: { accept: 'image/png,image/jpeg,image/jpg,*/*;q=0.5' } });
+
+      const response = await fetch(target, {
+        headers: {
+          accept: 'image/png,image/jpeg,image/jpg,image/webp,*/*;q=0.5'
+        }
+      });
+
       if (!response.ok) continue;
+
       const contentTypeRaw = String(response.headers.get('content-type') || '').toLowerCase();
       let ext = '';
-      let contentType = '';
-      if (contentTypeRaw.includes('png')) { ext = 'png'; contentType = 'image/png'; }
-      else if (contentTypeRaw.includes('jpeg') || contentTypeRaw.includes('jpg')) { ext = 'jpg'; contentType = 'image/jpeg'; }
+
+      if (contentTypeRaw.includes('png')) ext = 'png';
+      else if (contentTypeRaw.includes('jpeg') || contentTypeRaw.includes('jpg')) ext = 'jpg';
+      else if (contentTypeRaw.includes('webp')) ext = 'webp';
       else {
         const pathname = new URL(target).pathname.toLowerCase();
-        if (/\.png$/.test(pathname)) { ext = 'png'; contentType = 'image/png'; }
-        else if (/\.jpe?g$/.test(pathname)) { ext = 'jpg'; contentType = 'image/jpeg'; }
+        if (pathname.endsWith('.png')) ext = 'png';
+        else if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) ext = 'jpg';
+        else if (pathname.endsWith('.webp')) ext = 'webp';
       }
+
       if (!ext) continue;
+
       const bytes = new Uint8Array(await response.arrayBuffer());
+
       if (!bytes.length || bytes.length > 8 * 1024 * 1024) continue;
-      const filename = `image${images.length + 1}.${ext}`;
-      images.push({ filename, ext, contentType, bytes, dataRowIndex: i });
-    } catch (_) {}
+
+      images.push({
+        filename: `image${images.length + 1}.${ext}`,
+        ext,
+        contentType: contentTypeRaw || `image/${ext}`,
+        bytes,
+        dataRowIndex: i
+      });
+
+    } catch (error) {
+      console.warn('summary export image failed:', raw, error);
+    }
   }
+
   return images;
 }
 
