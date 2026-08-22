@@ -342,6 +342,7 @@ async function fetchSummaryImages(dataRows, requestUrl) {
         const pathname = new URL(target).pathname.toLowerCase();
         if (/\.png$/.test(pathname)) { ext = 'png'; contentType = 'image/png'; }
         else if (/\.jpe?g$/.test(pathname)) { ext = 'jpg'; contentType = 'image/jpeg'; }
+        else if (/\.webp$/.test(pathname)) { ext = 'webp'; contentType = 'image/webp'; }
       }
       if (!ext) continue;
       const bytes = new Uint8Array(await response.arrayBuffer());
@@ -576,28 +577,6 @@ export async function onRequestGet({ request, env }) {
       return Array.from(groups.values());
     }
 
-
-    async function fillSummaryProductImages(summaryGroups) {
-      try {
-        const styles = await storage.listStyles({ limit: '10000' });
-        const styleList = Array.isArray(styles) ? styles : (styles?.items || styles?.data || []);
-        const map = new Map();
-        for (const style of styleList) {
-          const code = String(style.style_code || style.code || style.styleCode || '').trim();
-          if (code) map.set(code, style.product_image || style.image || '');
-        }
-        for (const group of summaryGroups) {
-          if (!group.product_image) {
-            group.product_image = map.get(String(group.style_code || '').trim()) || '';
-          }
-          if (group.product_image && group.product_image.startsWith('http://xianglu.dragon-sturgeon.cn')) {
-            group.product_image = group.product_image.replace(/^http:\/\//i, 'https://');
-          }
-        }
-      } catch (_) {}
-      return summaryGroups;
-    }
-
     const mode = String(url.searchParams.get('mode') || 'detail').toLowerCase();
     let headers;
     let rows;
@@ -605,7 +584,7 @@ export async function onRequestGet({ request, env }) {
     let fallbackFilename;
 
     if (mode === 'summary') {
-      const groups = await fillSummaryProductImages(buildSummaryGroups(scores));
+      const groups = buildSummaryGroups(scores);
       const summaryRows = groups.map(group => {
         const averageItemNumber = label => {
           const values = group.scores.map(score => findScoreValue(score, label)).filter(value => value !== '' && value != null).map(Number).filter(Number.isFinite);
