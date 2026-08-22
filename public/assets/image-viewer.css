@@ -1,0 +1,70 @@
+
+.product-image-viewer-mask{
+ position:fixed;
+ inset:0;
+ background:rgba(0,0,0,.65);
+ display:none;
+ align-items:center;
+ justify-content:center;
+ z-index:999999;
+ padding:16px;
+}
+
+.product-image-viewer-mask.show{
+ display:flex;
+}
+
+.product-image-viewer-box{
+ animation:imageViewerShow .2s ease;
+}
+
+.product-image-viewer-img{
+ max-width:80vw;
+ max-height:85vh;
+ object-fit:contain;
+ cursor:zoom-in;
+ transition:.25s ease;
+ border-radius:8px;
+}
+
+.product-image-viewer-img.zoom{
+ max-width:96vw;
+ max-height:96vh;
+ cursor:zoom-out;
+}
+
+@keyframes imageViewerShow{
+ from{transform:scale(.85);opacity:0}
+ to{transform:scale(1);opacity:1}
+}
+
+/* 电脑评分时鼠标悬停效果 */
+.public-style-image,
+.photo{
+ cursor:zoom-in;
+ transition:.2s;
+}
+
+.public-style-image:hover,
+.photo:hover{
+ filter:brightness(.75);
+}
+
+.public-style-image:hover::after,
+.photo:hover::after{
+ content:'◉';
+}
+
+@media(max-width:600px){
+ .product-image-viewer-img{
+  max-width:95vw;
+  max-height:82vh;
+ }
+}
+
+@media(min-width:601px) and (max-width:1200px){
+ .product-image-viewer-img{
+  max-width:88vw;
+  max-height:85vh;
+ }
+}

@@ -3123,3 +3123,7 @@ checkLogin();
 
 // image preview loader
 (function(){var s=document.createElement('script');s.src='/assets/image-preview.js';document.head.appendChild(s);})();
+
+
+// product image viewer loader
+(function(){if(!window.__productImageViewerLoaded){window.__productImageViewerLoaded=true;var s=document.createElement('script');s.src='/assets/image-viewer.js';document.head.appendChild(s);var l=document.createElement('link');l.rel='stylesheet';l.href='/assets/image-viewer.css';document.head.appendChild(l);}})();
