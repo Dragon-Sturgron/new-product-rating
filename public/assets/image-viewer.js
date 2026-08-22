@@ -1,7 +1,10 @@
 
 (function(){
   function fixUrl(url){
-    return String(url||'').replace(/^http:\/\/xianglu\.dragon-sturgeon\.cn/i,'https://xianglu.dragon-sturgeon.cn');
+    return String(url || '').replace(
+      /^http:\/\/xianglu\.dragon-sturgeon\.cn/i,
+      'https://xianglu.dragon-sturgeon.cn'
+    );
   }
 
   function init(){
@@ -12,32 +15,48 @@
     mask.innerHTML='<div class="product-image-viewer-box"><img class="product-image-viewer-img"></div>';
     document.body.appendChild(mask);
 
-    const img=mask.querySelector('img');
+    const img=mask.querySelector('.product-image-viewer-img');
+
+    function closeViewer(){
+      mask.classList.remove('show');
+      img.classList.remove('zoom');
+      img.removeAttribute('src');
+      document.documentElement.style.overflow='';
+      document.body.style.overflow='';
+    }
 
     document.addEventListener('click',function(e){
       const target=e.target.closest('[data-preview-image]');
       if(!target) return;
+
       e.preventDefault();
 
       img.src=fixUrl(target.dataset.previewImage || target.src);
+
+      // 打开大图
       mask.classList.add('show');
-      img.classList.remove('zoom');
+
+      // 禁止背景滚动
+      document.documentElement.style.overflow='hidden';
+      document.body.style.overflow='hidden';
     });
 
+    // 点击黑色背景关闭
     mask.addEventListener('click',function(e){
       if(e.target===mask){
-        mask.classList.remove('show');
+        closeViewer();
       }
     });
 
+    // 点击大图：回到缩略图状态
     img.addEventListener('click',function(e){
       e.stopPropagation();
-      img.classList.toggle('zoom');
+      closeViewer();
     });
 
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
-        mask.classList.remove('show');
+        closeViewer();
       }
     });
   }
