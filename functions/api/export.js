@@ -593,12 +593,23 @@ export async function onRequestGet({ request, env }) {
         const styles = await storage.listStyles({});
         const imageMap = new Map();
         for (const style of (styles || [])) {
-          const code = String(style.style_code || '').trim();
+          const code = String(
+            style.style_code ||
+            style.styleCode ||
+            style.code ||
+            ''
+          ).trim();
           if (!code) continue;
+
           imageMap.set(code, String(
             style.product_image ||
             style.productImage ||
+            style.productImageUrl ||
+            style.image_url ||
+            style.imageUrl ||
             style.image ||
+            style.pic ||
+            style.photo ||
             ''
           ).trim());
         }
@@ -606,6 +617,14 @@ export async function onRequestGet({ request, env }) {
           const image = imageMap.get(String(group.style_code || '').trim());
           if (image) {
             group.product_image = image;
+          }
+
+          // 兼容历史数据中 http 地址和路径地址
+          if (group.product_image) {
+            group.product_image = String(group.product_image).trim();
+            if (group.product_image.startsWith('http://')) {
+              group.product_image = group.product_image.replace(/^http:\/\//i, 'https://');
+            }
           }
         }
       } catch (e) {
